@@ -17,6 +17,7 @@ try:
     tenders_collection = db['tenders']
     inventory_collection = db['inventory']
     test_pricing_collection = db['test_pricing']
+    celery_tasks_collection = db['celery_tasks']
     
     # Create indexes
     tenders_collection.create_index("title", unique=True)
@@ -34,3 +35,4 @@ if not client:
     tenders_collection = None
     inventory_collection = None
     test_pricing_collection = None
+    celery_tasks_collection = None

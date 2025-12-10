@@ -7,110 +7,92 @@
     <style>
         @page {
             size: A4;
-            margin: 2cm;
-        }
-
-        body {
-            font-family: 'Times New Roman', Times, serif;
-            color: #000;
-            line-height: 1.8;
-            background: #fff;
-            max-width: 210mm;
-            margin: 0 auto;
-            padding: 25px 30px;
+            margin: 1.5cm;
         }
 
         * {
-            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
         }
 
-        h1 {
-            font-size: 24px;
+        body {
+            font-family: 'Helvetica', 'Arial', sans-serif;
+            color: #000;
+            line-height: 1.6;
+            background: #fff;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 30px 20px;
+            background-color: #000;
+            color: #fff;
+            margin-bottom: 30px;
+            border-top: 8px solid #000;
+            border-bottom: 8px solid #000;
+        }
+
+        .header-stripe {
+            height: 4px;
+            background-color: #666;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            margin-bottom: 12px;
+            padding: 0;
+        }
+
+        .header h3 {
+            font-size: 16px;
+            font-weight: normal;
+            font-style: italic;
+            letter-spacing: 1px;
+            color: #ccc;
+            padding: 0;
+        }
+
+        /* Section Headers */
+        h2 {
+            font-size: 18px;
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 2px;
-            margin-bottom: 5px;
-            border-bottom: 3px solid #000;
+            margin: 25px 0 20px 0;
             padding-bottom: 10px;
-        }
-
-        h2 {
-            font-size: 16px;
-            font-weight: bold;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 30px;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 5px;
+            border-bottom: 3px solid #000;
+            color: #000;
         }
 
         h3 {
             font-size: 14px;
             font-weight: bold;
-            margin-top: 20px;
-            margin-bottom: 10px;
-            text-decoration: underline;
+            margin: 15px 0 10px 0;
+            color: #000;
         }
 
         h4 {
             font-size: 12px;
             font-weight: bold;
-            margin-top: 15px;
-            margin-bottom: 8px;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 50px;
-            padding: 25px 0 25px 0;
-            border-top: 3px solid #000;
-            border-bottom: 3px solid #000;
-            background: linear-gradient(to bottom, #fff 0%, #f8f8f8 50%, #fff 100%);
-        }
-
-        .header h1 {
-            border: none;
-            margin-bottom: 8px;
-            font-size: 26px;
-        }
-
-        .header h3 {
-            font-size: 16px;
-            text-decoration: none;
-            font-style: italic;
-            font-weight: normal;
-            margin-top: 8px;
+            margin: 15px 0 8px 0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             color: #333;
         }
 
-        .meta-table {
-            width: 100%;
-            margin-bottom: 30px;
-            border: 2px solid #000;
-            border-collapse: collapse;
-        }
-
-        .meta-table td {
-            padding: 10px;
-            border: 1px solid #000;
-            font-size: 11px;
-        }
-
-        .meta-label {
-            font-weight: bold;
-            width: 35%;
-            background: #f5f5f5;
-        }
-
+        /* Section Container */
         .section {
             margin-bottom: 40px;
+            padding: 25px;
+            border-left: 6px solid #000;
+            background-color: #fff;
             page-break-before: always;
             page-break-inside: avoid;
-            background: #fff;
-            padding: 15px;
-            border: 1px solid #ddd;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .section:first-of-type {
@@ -120,23 +102,48 @@
         .section p {
             text-align: justify;
             margin: 15px 0;
-            font-size: 12px;
-            line-height: 1.9;
+            font-size: 11px;
+            line-height: 1.8;
+            color: #1a1a1a;
         }
 
+        /* Corner Decorations */
+        .corner-box {
+            position: relative;
+            padding: 20px;
+            border: 2px solid #000;
+        }
+
+        /* Metadata Table */
+        .meta-table {
+            width: 100%;
+            margin: 20px 0;
+            border-collapse: collapse;
+            border: 2px solid #000;
+        }
+
+        .meta-table td {
+            padding: 12px;
+            border: 1px solid #666;
+            font-size: 10px;
+            vertical-align: top;
+        }
+
+        .meta-label {
+            font-weight: bold;
+            width: 35%;
+            background-color: #f0f0f0;
+            text-transform: uppercase;
+            font-size: 9px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Data Tables */
         .data-table {
             width: 100%;
-            border: 2px solid #000;
             border-collapse: collapse;
             margin-top: 15px;
-            font-size: 10px;
-        }
-
-        .data-table th,
-        .data-table td {
-            border: 1px solid #000;
-            padding: 8px 6px;
-            text-align: left;
+            border: 2px solid #000;
         }
 
         .data-table th {
@@ -145,151 +152,205 @@
             font-weight: bold;
             text-transform: uppercase;
             font-size: 9px;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
+            padding: 10px 6px;
+            text-align: left;
+            border: 1px solid #000;
+        }
+
+        .data-table td {
+            border: 1px solid #666;
+            padding: 8px 6px;
+            font-size: 10px;
+            text-align: left;
+            vertical-align: top;
         }
 
         .data-table tbody tr:nth-child(even) {
-            background-color: #f9f9f9;
+            background-color: #f5f5f5;
         }
 
+        /* Item Box */
         .item-box {
             margin-bottom: 25px;
             border: 2px solid #000;
-            padding: 20px;
-            background: #fafafa;
-            box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.1);
+            background-color: #fff;
+            page-break-inside: avoid;
         }
 
-        .item-box h3 {
-            margin-top: 0;
-            text-decoration: none;
-            border-bottom: 2px solid #000;
-            padding-bottom: 8px;
-            background: #fff;
-            padding: 8px;
-            margin: -20px -20px 15px -20px;
+        .item-box-header {
+            background-color: #000;
+            color: #fff;
+            padding: 12px 15px;
+            border-bottom: 3px solid #666;
         }
 
-        .item-box p {
+        .item-box-header h3 {
+            margin: 0;
+            padding: 0;
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #fff;
+        }
+
+        .item-box-content {
+            padding: 15px;
+            background-color: #fafafa;
+        }
+
+        .item-box-content p {
             margin: 10px 0;
-            font-size: 11px;
+            font-size: 10px;
+            text-align: left;
         }
 
-        .footer {
-            margin-top: 50px;
-            text-align: center;
-            font-size: 9px;
-            color: #000;
-            border-top: 2px solid #000;
-            padding-top: 15px;
-            font-style: italic;
+        /* SKU Badge */
+        .sku-badge {
+            display: inline-block;
+            background-color: #000;
+            color: #fff;
+            padding: 5px 12px;
+            font-weight: bold;
+            font-size: 10px;
+            letter-spacing: 1px;
+            margin-left: 5px;
         }
 
+        /* Total Row */
         .total-row {
             font-weight: bold;
-            background-color: #e0e0e0 !important;
-            border-top: 2px solid #000 !important;
+            background-color: #000 !important;
+            color: #fff;
+            border-top: 3px solid #000 !important;
         }
 
         .total-row td {
             font-size: 11px;
             padding: 12px 6px;
+            color: #fff;
+            border: 1px solid #000 !important;
         }
 
-        .sku-match {
+        /* Labels */
+        .label {
             font-weight: bold;
-            text-decoration: underline;
+            text-transform: uppercase;
+            font-size: 9px;
+            letter-spacing: 0.5px;
         }
 
+        /* Links */
         a {
             color: #000;
             text-decoration: underline;
         }
 
-        .label {
-            font-weight: bold;
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            padding: 20px;
+            background-color: #000;
+            color: #fff;
+            font-size: 9px;
+            font-style: italic;
+            letter-spacing: 1px;
+            border-top: 4px solid #666;
         }
 
-        @media print {
-            body {
-                margin: 0;
-                padding: 15mm;
-            }
+        /* Accent Line */
+        .accent-line {
+            height: 3px;
+            background-color: #666;
+            width: 60px;
+            margin-top: 5px;
+        }
 
-            .section {
-                page-break-before: always;
-                page-break-inside: avoid;
-            }
+        /* Number Circle */
+        .number-badge {
+            display: inline-block;
+            background-color: #000;
+            color: #fff;
+            width: 20px;
+            height: 20px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 10px;
+            line-height: 20px;
+        }
 
-            .section:first-of-type {
-                page-break-before: auto;
-            }
-
-            .item-box {
-                page-break-inside: avoid;
-            }
-
-            .data-table {
-                page-break-inside: auto;
-            }
-
-            .data-table tr {
-                page-break-inside: avoid;
-            }
+        /* Stats Display */
+        .stats-display {
+            background-color: #f5f5f5;
+            padding: 10px 15px;
+            border-left: 4px solid #000;
+            margin: 15px 0;
+            font-size: 10px;
         }
     </style>
 </head>
 
 <body>
+    <!-- Header -->
     <div class="header">
+        <div class="header-stripe"></div>
         <h1>RFP Response Report</h1>
         <h3>{{ tender_title }}</h3>
     </div>
 
+    <!-- Section 1: Tender Information -->
     <div class="section">
         <h2>1. Tender Information</h2>
-        <table class="meta-table">
-            <tr>
-                <td class="meta-label">Source URL:</td>
-                <td><a href="{{ source }}">{{ source }}</a></td>
-            </tr>
-            <tr>
-                <td class="meta-label">Generated At:</td>
-                <td>{{ generated_at }}</td>
-            </tr>
-            <tr>
-                <td class="meta-label">Pipeline Run ID:</td>
-                <td>{{ pipeline_run_id }}</td>
-            </tr>
-        </table>
+        <div class="corner-box">
+            <table class="meta-table">
+                <tr>
+                    <td class="meta-label">Source URL:</td>
+                    <td><a href="{{ source }}">{{ source }}</a></td>
+                </tr>
+                <tr>
+                    <td class="meta-label">Generated At:</td>
+                    <td>{{ generated_at }}</td>
+                </tr>
+                <tr>
+                    <td class="meta-label">Pipeline Run ID:</td>
+                    <td>{{ pipeline_run_id }}</td>
+                </tr>
+            </table>
+        </div>
     </div>
 
+    <!-- Section 2: Executive Summary -->
     <div class="section">
         <h2>2. Executive Summary</h2>
+        <div class="accent-line"></div>
         <p>{{ sales_summary }}</p>
     </div>
 
+    <!-- Section 3: Scope of Supply -->
     <div class="section">
         <h2>3. Scope of Supply</h2>
+        <div class="accent-line"></div>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Description</th>
-                    <th>Quantity</th>
-                    <th>Specifications</th>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 30%;">Description</th>
+                    <th style="width: 10%;">Quantity</th>
+                    <th style="width: 55%;">Specifications</th>
                 </tr>
             </thead>
             <tbody>
                 {% for item in scope_of_supply %}
                 <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>{{ item.Description|default('N/A') }}</td>
+                    <td><span class="number-badge">{{ loop.index }}</span></td>
+                    <td><strong>{{ item.Description|default('N/A') }}</strong></td>
                     <td>{{ item.Quantity|default(0) }}</td>
                     <td>
                         {% for k, v in item.items() %}
                         {% if k not in ['Description', 'Quantity'] %}
-                        <span class="label">{{ k }}:</span> {{ v|default('N/A') }}<br>
+                        <span class="label">{{ k }}:</span> {{ v|default('N/A') }}<br />
                         {% endif %}
                         {% endfor %}
                     </td>
@@ -299,57 +360,67 @@
         </table>
     </div>
 
+    <!-- Section 4: Technical Recommendations -->
     <div class="section">
         <h2>4. Technical Recommendations</h2>
+        <div class="accent-line"></div>
         {% for rec in technical_recommendations %}
         <div class="item-box">
-            <h3>Item #{{ rec.line_item_index + 1 }}: {{ rec.rfp_item.Description|default('N/A') }}</h3>
-            <p><span class="label">Recommended SKU:</span> <span class="sku-match">{{
-                    rec.final_recommended_sku|default('N/A') }}</span></p>
+            <div class="item-box-header">
+                <h3>Item #{{ rec.line_item_index + 1 }}: {{ rec.rfp_item.Description|default('N/A') }}</h3>
+            </div>
+            <div class="item-box-content">
+                <p>
+                    <span class="label">Recommended SKU:</span>
+                    <span class="sku-badge">{{ rec.final_recommended_sku|default('N/A') }}</span>
+                </p>
 
-            <h4>Top 3 Matches</h4>
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>SKU ID</th>
-                        <th>Product Name</th>
-                        <th>Match %</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for match in rec.top_3_skus %}
-                    <tr>
-                        <td>{{ match.sku.sku_id|default('N/A') }}</td>
-                        <td>{{ match.sku.product_name|default('N/A') }}</td>
-                        <td>{{ match.match_pct|default(0)|round(2) }}%</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                <h4>Top 3 Matches</h4>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 25%;">SKU ID</th>
+                            <th style="width: 60%;">Product Name</th>
+                            <th style="width: 15%;">Match %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for match in rec.top_3_skus %}
+                        <tr>
+                            <td>{{ match.sku.sku_id|default('N/A') }}</td>
+                            <td>{{ match.sku.product_name|default('N/A') }}</td>
+                            <td><strong>{{ match.match_pct|default(0)|round(2) }}%</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
         {% endfor %}
     </div>
 
+    <!-- Section 5: Commercial Proposal -->
     <div class="section">
         <h2>5. Commercial Proposal</h2>
+        <div class="accent-line"></div>
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>#</th>
-                    <th>Description</th>
-                    <th>SKU</th>
-                    <th>Qty</th>
-                    <th>Unit Price</th>
-                    <th>Material Cost</th>
-                    <th>Test Cost</th>
-                    <th>Total</th>
+                    <th style="width: 5%;">#</th>
+                    <th style="width: 25%;">Description</th>
+                    <th style="width: 12%;">SKU</th>
+                    <th style="width: 8%;">Qty</th>
+                    <th style="width: 12%;">Unit Price</th>
+                    <th style="width: 13%;">Material Cost</th>
+                    <th style="width: 12%;">Test Cost</th>
+                    <th style="width: 13%;">Total</th>
                 </tr>
             </thead>
             <tbody>
                 {% for line in pricing_table %}
                 <tr>
-                    <td>{{ line.line_item_index + 1 }}</td>
-                    <td>{{ line.description|default('N/A') }}</td>
+                    <td><span class="number-badge">{{ line.line_item_index + 1 }}</span></td>
+                    <td><strong>{{ line.description|default('N/A') }}</strong></td>
                     <td>{{ line.sku_id|default('N/A') }}</td>
                     <td>{{ line.qty|default(0)|round(2) }}</td>
                     <td>{{ line.unit_price|default(0)|round(2) }}</td>
@@ -358,16 +429,20 @@
                     <td>{{ line.total_cost|default(0)|round(2) }}</td>
                 </tr>
                 {% endfor %}
-                <tr class="total-row">
-                    <td colspan="7" style="text-align: right;">GRAND TOTAL:</td>
-                    <td>{{ total_tender_price|default(0)|round(2) }}</td>
+                <tr class="total-row" style="padding: 10px;">
+                    <td colspan="7" style="text-align: right; text-transform: uppercase;">
+                        <strong>TOTAL:</strong>
+                    </td>
+                    <td style="text-align: right;" colspan="1"><strong>{{ total_tender_price|default(0)|round(2)
+                            }}</strong></td>
                 </tr>
             </tbody>
         </table>
     </div>
 
+    <!-- Footer -->
     <div class="footer">
-        Generated by RFP-Yukti (Agentic AI System) - Confidential Document
+        Generated by RFP-Yukti (Agentic AI System) — Confidential Document — {{ generated_at }}
     </div>
 </body>
 

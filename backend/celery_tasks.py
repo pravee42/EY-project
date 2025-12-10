@@ -12,7 +12,7 @@ from agents.sales_agent import process_tenders_via_sales_agent
 from agents.technical_agent import process_tenders_via_technical_agent
 from agents.pricing_agent import process_tenders_via_pricing_agent
 from agents.master_agent import process_tenders_via_master_agent
-from database.mongo import tenders_collection
+from database.mongo import tenders_collection, celery_tasks_collection
 from bson import ObjectId
 
 load_dotenv()
@@ -46,65 +46,114 @@ def send_email(to_email, subject, html_content):
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
 
-@celery_app.task(name="run_full_tender_pipeline")
-def run_full_tender_pipeline():
-    logger.info("Starting full tender pipeline task...")
-    
-    # 1. Scrape
-    logger.info("Step 1: Scraping...")
-    scraped_tenders = scrape_all_sources()
-    logger.info(f"Scraped {len(scraped_tenders)} tenders.")
-    
-    # 2. Sales Agent
-    logger.info("Step 2: Sales Agent...")
-    sales_ids = process_tenders_via_sales_agent(limit=50)
-    
-    # 3. Technical Agent
-    logger.info("Step 3: Technical Agent...")
-    tech_ids = process_tenders_via_technical_agent(limit=50)
-    
-    # 4. Pricing Agent
-    logger.info("Step 4: Pricing Agent...")
-    price_ids = process_tenders_via_pricing_agent(limit=50)
-    
-    # 5. Master Agent
-    logger.info("Step 5: Master Agent...")
-    master_ids = process_tenders_via_master_agent(limit=50)
-    
-    logger.info(f"Pipeline finished. Master processed IDs: {master_ids}")
-    
-    # 6. Send Emails
-    if master_ids:
-        for tender_id in master_ids:
-            try:
-                tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
-                if tender:
-                    # Render a simple email body or use the template content
-                    # The user asked for "report_template.html content"
-                    # We can try to render it with the tender data
-                    
-                    # We need to reconstruct the data expected by the template
-                    # Fortunately, master_agent.py saves 'final_report_json' in the tender document
-                    final_report = tender.get("final_report_json", {})
-                    
-                    # We need to render this using Jinja2
-                    from jinja2 import Environment, FileSystemLoader
-                    template_dir = os.path.join(os.path.dirname(__file__), "templates")
-                    env = Environment(loader=FileSystemLoader(template_dir))
-                    template = env.get_template("report_template.html")
-                    
-                    html_content = template.render(**final_report)
-                    
-                    subject = f"New Tender Report Processed: {final_report.get('tender_title', 'Untitled')}"
-                    send_email("praveen@abipravi.in", subject, html_content)
-                    
-            except Exception as e:
-                logger.error(f"Error sending email for tender {tender_id}: {e}")
-    
-    return {
-        "scraped": len(scraped_tenders),
-        "sales_processed": len(sales_ids),
-        "technical_processed": len(tech_ids),
-        "pricing_processed": len(price_ids),
-        "master_processed": len(master_ids)
+def update_task_status(task_id, stage, status, details=None):
+    """Helper to update task status in MongoDB"""
+    if celery_tasks_collection is None:
+        return
+        
+    update_data = {
+        "current_stage": stage,
+        "status": status,
+        "updated_at": datetime.now()
     }
+    if details:
+        update_data["details"] = details
+        
+    celery_tasks_collection.update_one(
+        {"task_id": task_id},
+        {"$set": update_data},
+        upsert=True
+    )
+
+@celery_app.task(name="run_full_tender_pipeline", bind=True)
+def run_full_tender_pipeline(self):
+    task_id = self.request.id
+    logger.info(f"Starting full tender pipeline task {task_id}...")
+    
+    # Initialize task record
+    if celery_tasks_collection is not None:
+        celery_tasks_collection.insert_one({
+            "task_id": task_id,
+            "status": "RUNNING",
+            "current_stage": "INIT",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "details": {}
+        })
+
+    try:
+        # 1. Scrape
+        update_task_status(task_id, "SCRAPING", "RUNNING")
+        logger.info("Step 1: Scraping...")
+        scraped_tenders = scrape_all_sources()
+        logger.info(f"Scraped {len(scraped_tenders)} tenders.")
+        update_task_status(task_id, "SCRAPING", "COMPLETED", {"scraped_count": len(scraped_tenders)})
+        
+        # 2. Sales Agent
+        update_task_status(task_id, "SALES_AGENT", "RUNNING")
+        logger.info("Step 2: Sales Agent...")
+        sales_ids = process_tenders_via_sales_agent(limit=50)
+        update_task_status(task_id, "SALES_AGENT", "COMPLETED", {"sales_processed": len(sales_ids)})
+        
+        # 3. Technical Agent
+        update_task_status(task_id, "TECHNICAL_AGENT", "RUNNING")
+        logger.info("Step 3: Technical Agent...")
+        tech_ids = process_tenders_via_technical_agent(limit=50)
+        update_task_status(task_id, "TECHNICAL_AGENT", "COMPLETED", {"technical_processed": len(tech_ids)})
+        
+        # 4. Pricing Agent
+        update_task_status(task_id, "PRICING_AGENT", "RUNNING")
+        logger.info("Step 4: Pricing Agent...")
+        price_ids = process_tenders_via_pricing_agent(limit=50)
+        update_task_status(task_id, "PRICING_AGENT", "COMPLETED", {"pricing_processed": len(price_ids)})
+        
+        # 5. Master Agent
+        update_task_status(task_id, "MASTER_AGENT", "RUNNING")
+        logger.info("Step 5: Master Agent...")
+        master_ids = process_tenders_via_master_agent(limit=50)
+        update_task_status(task_id, "MASTER_AGENT", "COMPLETED", {"master_processed": len(master_ids)})
+        
+        logger.info(f"Pipeline finished. Master processed IDs: {master_ids}")
+        
+        # 6. Send Emails
+        update_task_status(task_id, "EMAIL_NOTIFICATION", "RUNNING")
+        if master_ids:
+            for tender_id in master_ids:
+                try:
+                    tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+                    if tender:
+                        final_report = tender.get("final_report_json", {})
+                        
+                        from jinja2 import Environment, FileSystemLoader
+                        template_dir = os.path.join(os.path.dirname(__file__), "templates")
+                        env = Environment(loader=FileSystemLoader(template_dir))
+                        template = env.get_template("report_template.html")
+                        
+                        html_content = template.render(**final_report)
+                        
+                        subject = f"New Tender Report Processed: {final_report.get('tender_title', 'Untitled')}"
+                        send_email("praveen@abipravi.in", subject, html_content)
+                        
+                except Exception as e:
+                    logger.error(f"Error sending email for tender {tender_id}: {e}")
+        
+        update_task_status(task_id, "COMPLETED", "SUCCESS", {
+            "scraped": len(scraped_tenders),
+            "sales_processed": len(sales_ids),
+            "technical_processed": len(tech_ids),
+            "pricing_processed": len(price_ids),
+            "master_processed": len(master_ids)
+        })
+        
+        return {
+            "scraped": len(scraped_tenders),
+            "sales_processed": len(sales_ids),
+            "technical_processed": len(tech_ids),
+            "pricing_processed": len(price_ids),
+            "master_processed": len(master_ids)
+        }
+
+    except Exception as e:
+        logger.error(f"Pipeline failed: {e}")
+        update_task_status(task_id, "FAILED", "ERROR", {"error": str(e)})
+        raise e

@@ -9,7 +9,7 @@ import os
 # Ensure backend directory is in path if running directly
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from database.mongo import tenders_collection
+from database.mongo import tenders_collection, celery_tasks_collection
 from scraper.scraper import scrape_all_sources
 
 from agents.sales_agent import sales_summary_job, process_tenders_via_sales_agent
@@ -220,6 +220,31 @@ def start_celery_process():
     except Exception as e:
         logger.error(f"Error starting celery task: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/tasks")
+def list_tasks():
+    """
+    List all Celery tasks and their status.
+    """
+    if celery_tasks_collection is None:
+        return {"error": "Database not connected", "tasks": []}
+    
+    tasks = list(celery_tasks_collection.find({}, {"_id": 0}).sort("created_at", -1))
+    return tasks
+
+@app.get("/api/tasks/{task_id}")
+def get_task_details(task_id: str):
+    """
+    Get details of a specific Celery task.
+    """
+    if celery_tasks_collection is None:
+        return {"error": "Database not connected"}
+    
+    task = celery_tasks_collection.find_one({"task_id": task_id}, {"_id": 0})
+    if not task:
+        return {"error": "Task not found"}
+    
+    return task
 
 
 if __name__ == "__main__":

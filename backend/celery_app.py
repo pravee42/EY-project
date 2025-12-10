@@ -2,22 +2,27 @@ import os
 from celery import Celery
 
 # Ensure directories exist
-os.makedirs('./broker/out', exist_ok=True)
-os.makedirs('./broker/processed', exist_ok=True)
-os.makedirs('./results', exist_ok=True)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BROKER_OUT = os.path.join(BASE_DIR, 'broker', 'out')
+BROKER_PROCESSED = os.path.join(BASE_DIR, 'broker', 'processed')
+RESULTS_DIR = os.path.join(BASE_DIR, 'results')
+
+os.makedirs(BROKER_OUT, exist_ok=True)
+os.makedirs(BROKER_PROCESSED, exist_ok=True)
+os.makedirs(RESULTS_DIR, exist_ok=True)
 
 celery_app = Celery(
     'tenders',
     broker='filesystem://',
-    backend='file://./results',
+    backend=f'file://{RESULTS_DIR}',
     include=['celery_tasks']
 )
 
 celery_app.conf.update(
     broker_transport_options={
-        'data_folder_in': './broker/out',
-        'data_folder_out': './broker/out',
-        'data_folder_processed': './broker/processed'
+        'data_folder_in': BROKER_OUT,
+        'data_folder_out': BROKER_OUT,
+        'data_folder_processed': BROKER_PROCESSED
     },
     result_persistent=True,
     task_serializer='json',
