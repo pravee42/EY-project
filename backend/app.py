@@ -13,6 +13,7 @@ from database.mongo import tenders_collection
 from scraper.scraper import scrape_all_sources
 
 from agents.sales_agent import sales_summary_job, process_tenders_via_sales_agent
+from agents.technical_agent import technical_agent_job, process_tenders_via_technical_agent
 
 # Logging Configuration
 logging.basicConfig(
@@ -78,8 +79,17 @@ async def lifespan(app: FastAPI):
         replace_existing=True
     )
     
+    # Technical Agent Job (Every 10 mins)
+    scheduler.add_job(
+        technical_agent_job,
+        'interval',
+        minutes=60,
+        id='technical_agent_job',
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("Background Scheduler started (Scraper + Sales Agent).")
+    logger.info("Background Scheduler started (Scraper + Sales + Technical).")
     
     yield
     
@@ -94,7 +104,6 @@ app = FastAPI(lifespan=lifespan, title="RFP-Yukti Backend Scraper")
 def read_root():
     return {"status": "running", "service": "RFP-Yukti Scraper"}
 
-scheduled_scrape_job()
 @app.get("/tenders")
 def get_tenders():
     """
@@ -117,6 +126,18 @@ def trigger_sales_process():
         return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
     except Exception as e:
         logger.error(f"Error in manual sales process trigger: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/tenders/process/technical")
+def trigger_technical_process():
+    """
+    Manually trigger the Technical Agent processing job.
+    """
+    try:
+        processed_ids = process_tenders_via_technical_agent(limit=20)
+        return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
+    except Exception as e:
+        logger.error(f"Error in manual technical process trigger: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

@@ -12,14 +12,22 @@ try:
     # Ping the database to check connection
     client.admin.command('ping')
     print("Connected to MongoDB successfully.")
+
+    db = client["rfp_yukti"]
+    tenders_collection = db['tenders']
+    inventory_collection = db['inventory']
+
+    # Create indexes
+    tenders_collection.create_index("title", unique=True)
+    tenders_collection.create_index("scraped_at")
+    inventory_collection.create_index("sku_id", unique=True)
+
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
     # In a real app, you might want to raise the error or handle it more gracefully
     # For now, we'll proceed, but operations might fail if client isn't connected
     client = None
 
-if client:
-    db = client["rfp_yukti"]
-    tenders_collection = db["tenders"]
-else:
+if not client:
     tenders_collection = None
+    inventory_collection = None
