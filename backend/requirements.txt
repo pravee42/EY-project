@@ -10,3 +10,4 @@ importlib-metadata
 pypdf
 xhtml2pdf
 jinja2
+celery

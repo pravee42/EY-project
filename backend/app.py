@@ -16,6 +16,7 @@ from agents.sales_agent import sales_summary_job, process_tenders_via_sales_agen
 from agents.technical_agent import technical_agent_job, process_tenders_via_technical_agent
 from agents.pricing_agent import pricing_agent_job, process_tenders_via_pricing_agent
 from agents.master_agent import master_agent_job, process_tenders_via_master_agent
+from celery_tasks import run_full_tender_pipeline
 from fastapi.responses import FileResponse
 import os
 
@@ -207,6 +208,19 @@ def download_report_pdf(tender_id: str):
     except Exception as e:
         logger.error(f"Error downloading PDF: {e}")
         return {"error": str(e)}
+
+@app.post("/api/celery/start-process")
+def start_celery_process():
+    """
+    Trigger the full tender processing pipeline via Celery.
+    """
+    try:
+        task = run_full_tender_pipeline.delay()
+        return {"status": "Task started", "task_id": str(task.id)}
+    except Exception as e:
+        logger.error(f"Error starting celery task: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 if __name__ == "__main__":
     import uvicorn
