@@ -95,20 +95,61 @@ def get_test_prices(test_list: List[str]) -> Dict[str, float]:
         
     return prices
 
+def parse_quantity_with_llm(qty_str: str) -> float:
+    """
+    Parses quantity string and converts to Meters if unit is Km.
+    Returns float value.
+    """
+    if not qty_str:
+        return 1.0
+        
+    prompt = f"""
+    Analyze the quantity string: "{qty_str}"
+    
+    Task:
+    1. Extract the numeric value.
+    2. Identify the unit (Km, Meter, Nos, etc.).
+    3. If unit is 'Km' or 'Kilometer', convert the value to Meters (multiply by 1000).
+    4. If unit is 'Meter', 'm', 'Nos', or unspecified, keep the value as is.
+    
+    OUTPUT FORMAT:
+    Return ONLY a valid JSON object with a single key "value" containing the float number.
+    Do not add any markdown formatting or explanations.
+    
+    Example: {{"value": 11000.0}}
+    Example: {{"value": 500.0}}
+    """
+    try:
+        response = call_llm(prompt)
+        
+        if response:
+            # Clean up markdown if present
+            clean_response = response.strip()
+            if clean_response.startswith("```json"):
+                clean_response = clean_response[7:]
+            if clean_response.endswith("```"):
+                clean_response = clean_response[:-3]
+            
+            data = json.loads(clean_response.strip())
+            return float(data.get("value", 1.0))
+            
+    except Exception as e:
+        logger.error(f"Error parsing quantity with LLM: {e}")
+        
+    # Fallback to simple regex
+    match = re.search(r"(\d+(\.\d+)?)", str(qty_str))
+    if match:
+        return float(match.group(1))
+    return 1.0
+
 def calculate_pricing_for_line_item(rfp_item: dict, sku_item: dict, test_list: List[str], test_prices: Dict[str, float]) -> Dict[str, Any]:
     """
     Calculate material cost, test cost, and total cost for a single line item.
     """
     # 1. Quantity
     qty_str = rfp_item.get("Quantity", "1")
-    # Extract numeric quantity
-    qty = 1.0
-    match = re.search(r"(\d+(\.\d+)?)", str(qty_str))
-    if match:
-        qty = float(match.group(1))
-        # Check units? Assuming Km/Meters/Nos match unit price.
-        # If unit price is per Meter and Qty is Km, we need conversion.
-        # For MVP, assume units match.
+    # Use LLM to parse quantity and normalize to Meters
+    qty = parse_quantity_with_llm(qty_str)
     
     # 2. Material Cost
     unit_price = float(sku_item.get("unit_price", 0.0))
