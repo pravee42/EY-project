@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+apscheduler
+beautifulsoup4
+requests
+pymongo
+python-dotenv
+google-generativeai
+importlib-metadata
+pypdf
