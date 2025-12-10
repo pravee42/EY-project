@@ -222,7 +222,7 @@ def analyze_tenders_with_ai(tenders: List[dict]) -> List[dict]:
             cat = categories.get(str(i), "Uncategorized")
             tender["category"] = cat
             tenders[i]["category"] = cat
-            logger.info(f"Tender '{tender['title'][:30]}...' classified as: {cat}")
+            # logger.info(f"Tender '{tender['title'][:30]}...' classified as: {cat}")
             
     except Exception as e:
         logger.error(f"Error analyzing tenders with OpenAI REST API: {e}")
@@ -303,5 +303,4 @@ def scrape_mock_site() -> List[dict]:
         except Exception as e:
             logger.warning(f"Could not scrape {current_url}. Error: {e}")
             current_url = None
-        
     return results

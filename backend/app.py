@@ -43,7 +43,6 @@ def scheduled_scrape_job():
         if tenders_collection is None:
             logger.error("Database connection not available. Skipping save.")
             return
-
         new_count = 0
         for tender_data in tenders:
             try:

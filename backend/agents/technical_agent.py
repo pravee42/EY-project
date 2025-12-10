@@ -41,14 +41,15 @@ def parse_technical_summary(text: str) -> List[dict]:
     
     try:
         # Look for ITEMS: marker
-        if "ITEMS:" in text:
-            json_part = text.split("ITEMS:**")[1].strip()
+        if "**ITEMS:**" in text:
+            json_part = text.split("**ITEMS:**")[1].strip()
             # It might be wrapped in ```json ... ```
             if json_part.startswith("```"):
                 # Remove first line (```json) and last line (```)
                 lines = json_part.splitlines()
                 if lines[0].startswith("```"):
                     lines = lines[1:]
+                lines = [x.strip() for x in lines]
                 lines = lines[:lines.index('```')]
                 json_part = "\n".join(lines)
             # Attempt to parse
