@@ -14,6 +14,7 @@ from scraper.scraper import scrape_all_sources
 
 from agents.sales_agent import sales_summary_job, process_tenders_via_sales_agent
 from agents.technical_agent import technical_agent_job, process_tenders_via_technical_agent
+from agents.pricing_agent import pricing_agent_job, process_tenders_via_pricing_agent
 
 # Logging Configuration
 logging.basicConfig(
@@ -83,13 +84,22 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         technical_agent_job,
         'interval',
-        minutes=60,
+        minutes=10,
         id='technical_agent_job',
         replace_existing=True
     )
     
+    # Pricing Agent Job (Every 10 mins)
+    scheduler.add_job(
+        pricing_agent_job,
+        'interval',
+        minutes=10,
+        id='pricing_agent_job',
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("Background Scheduler started (Scraper + Sales + Technical).")
+    logger.info("Background Scheduler started (Scraper + Sales + Technical + Pricing).")
     
     yield
     
@@ -138,6 +148,18 @@ def trigger_technical_process():
         return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
     except Exception as e:
         logger.error(f"Error in manual technical process trigger: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/tenders/process/pricing")
+def trigger_pricing_process():
+    """
+    Manually trigger the Pricing Agent processing job.
+    """
+    try:
+        processed_ids = process_tenders_via_pricing_agent(limit=20)
+        return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
+    except Exception as e:
+        logger.error(f"Error in manual pricing process trigger: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

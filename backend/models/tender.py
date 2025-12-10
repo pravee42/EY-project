@@ -27,6 +27,13 @@ class Tender(BaseModel):
     scope_of_supply: Optional[List[dict]] = None
     technical_recommendations: Optional[List[dict]] = None
     technical_engine_version: Optional[str] = None
+    
+    # Pricing Agent Fields
+    pricing_processed: bool = False
+    pricing_processed_at: Optional[datetime] = None
+    pricing_table: Optional[List[dict]] = None
+    total_tender_price: Optional[float] = None
+    pricing_engine_version: Optional[str] = None
 
     class Config:
         json_encoders = {
