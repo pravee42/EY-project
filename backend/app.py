@@ -15,6 +15,9 @@ from scraper.scraper import scrape_all_sources
 from agents.sales_agent import sales_summary_job, process_tenders_via_sales_agent
 from agents.technical_agent import technical_agent_job, process_tenders_via_technical_agent
 from agents.pricing_agent import pricing_agent_job, process_tenders_via_pricing_agent
+from agents.master_agent import master_agent_job, process_tenders_via_master_agent
+from fastapi.responses import FileResponse
+import os
 
 # Logging Configuration
 logging.basicConfig(
@@ -84,7 +87,7 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         technical_agent_job,
         'interval',
-        minutes=10,
+        minutes=60,
         id='technical_agent_job',
         replace_existing=True
     )
@@ -93,13 +96,22 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(
         pricing_agent_job,
         'interval',
-        minutes=10,
+        minutes=60,
         id='pricing_agent_job',
         replace_existing=True
     )
     
+    # Master Agent Job (Every 10 mins)
+    scheduler.add_job(
+        master_agent_job,
+        'interval',
+        minutes=10,
+        id='master_agent_job',
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("Background Scheduler started (Scraper + Sales + Technical + Pricing).")
+    logger.info("Background Scheduler started (Scraper + Sales + Technical + Pricing + Master).")
     
     yield
     
@@ -161,6 +173,41 @@ def trigger_pricing_process():
     except Exception as e:
         logger.error(f"Error in manual pricing process trigger: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/tenders/process/master")
+def trigger_master_process():
+    """
+    Manually trigger the Master Agent processing job.
+    """
+    try:
+        processed_ids = process_tenders_via_master_agent(limit=20)
+        return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
+    except Exception as e:
+        logger.error(f"Error in manual master process trigger: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/tenders/{tender_id}/report/pdf")
+def download_report_pdf(tender_id: str):
+    """
+    Download the generated PDF report for a tender.
+    """
+    try:
+        from bson import ObjectId
+        tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        
+        if not tender:
+            return {"error": "Tender not found"}
+            
+        pdf_path = tender.get("final_report_pdf_path")
+        
+        if not pdf_path or not os.path.exists(pdf_path):
+            return {"error": "PDF report not generated yet"}
+            
+        return FileResponse(pdf_path, media_type="application/pdf", filename=f"Tender_Report_{tender_id}.pdf")
+        
+    except Exception as e:
+        logger.error(f"Error downloading PDF: {e}")
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

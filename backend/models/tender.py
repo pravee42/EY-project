@@ -34,6 +34,13 @@ class Tender(BaseModel):
     pricing_table: Optional[List[dict]] = None
     total_tender_price: Optional[float] = None
     pricing_engine_version: Optional[str] = None
+    
+    # Master Agent Fields
+    master_processed: bool = False
+    master_processed_at: Optional[datetime] = None
+    final_report_json: Optional[dict] = None
+    final_report_pdf_path: Optional[str] = None
+    report_engine_version: Optional[str] = None
 
     class Config:
         json_encoders = {

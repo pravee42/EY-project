@@ -74,10 +74,7 @@ def get_test_prices(test_list: List[str]) -> Dict[str, float]:
         return {}
     
     prices = {}
-    # Simple regex match or exact match. For now, let's try to find exact or partial matches.
-    # In a real system, we'd need fuzzy matching or standardized codes.
     
-    # Fetch all test prices once (assuming small table)
     all_tests = list(test_pricing_collection.find({}))
     
     for req_test in test_list:
@@ -85,7 +82,6 @@ def get_test_prices(test_list: List[str]) -> Dict[str, float]:
         req_test_lower = req_test.lower()
         
         for db_test in all_tests:
-            # Check if db test name is in requested test name or vice versa
             db_name = db_test.get("test_code", "").lower()
             if db_name and (db_name in req_test_lower or req_test_lower in db_name):
                 price = float(db_test.get("price", 0.0))
