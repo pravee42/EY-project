@@ -31,6 +31,7 @@ def find_ready_for_master(limit=20) -> List[dict]:
         "sales_processed": True,
         "technical_processed": True,
         "pricing_processed": True,
+        "approval_status": "APPROVED",
         "master_processed": {"$ne": True}
     }
     return list(tenders_collection.find(query).limit(limit))

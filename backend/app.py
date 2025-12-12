@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from bson import ObjectId
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
 import logging
@@ -122,6 +124,16 @@ async def lifespan(app: FastAPI):
 # --- FASTAPI APP ---
 app = FastAPI(lifespan=lifespan, title="RFP-Yukti Backend Scraper")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For hackathon, allow all. In prod, specify ["http://localhost:3000"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/")
 def read_root():
     return {"status": "running", "service": "RFP-Yukti Scraper"}
@@ -134,8 +146,9 @@ def get_tenders():
     if tenders_collection is None:
         return {"error": "Database not connected", "tenders": []}
     
-    # Return all tenders excluding the internal MongoDB _id
-    tenders = list(tenders_collection.find({}, {"_id": 0}).sort("scraped_at", -1))
+    # Return all tenders including _id (serialized)
+    tenders_cursor = tenders_collection.find().sort("scraped_at", -1)
+    tenders = [serialize_mongo_doc(t) for t in tenders_cursor]
     return tenders
 
 @app.get("/api/tenders/process/sales")
@@ -184,6 +197,83 @@ def trigger_master_process():
         return {"status": "ok", "processed_count": len(processed_ids), "processed_ids": processed_ids}
     except Exception as e:
         logger.error(f"Error in manual master process trigger: {e}")
+        return {"status": "error", "message": str(e)}
+
+class RejectionPayload(BaseModel):
+    reason: str
+
+def serialize_mongo_doc(doc):
+    doc["_id"] = str(doc["_id"])
+    return doc
+
+@app.get("/api/tenders/pending-approval")
+def get_pending_approval_tenders():
+    """
+    Get all tenders that have completed previous stages but are waiting for approval.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected", "tenders": []}
+    
+    query = {
+        "sales_processed": True,
+        "technical_processed": True,
+        "pricing_processed": True,
+        "approval_status": {"$nin": ["APPROVED", "REJECTED"]}
+    }
+    
+    # We need the _id to approve/reject, so we must include it
+    tenders_cursor = tenders_collection.find(query).sort("scraped_at", -1)
+    tenders = [serialize_mongo_doc(t) for t in tenders_cursor]
+    return tenders
+
+@app.post("/api/tenders/{tender_id}/approve")
+def approve_tender(tender_id: str):
+    """
+    Approve a tender for Master Agent processing.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        result = tenders_collection.update_one(
+            {"_id": ObjectId(tender_id)},
+            {"$set": {"approval_status": "APPROVED", "approved_at": datetime.now()}}
+        )
+        
+        if result.matched_count == 0:
+             return {"error": "Tender not found"}
+             
+        return {"status": "success", "message": f"Tender {tender_id} approved"}
+        
+    except Exception as e:
+        logger.error(f"Error approving tender: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/tenders/{tender_id}/reject")
+def reject_tender(tender_id: str, payload: RejectionPayload):
+    """
+    Reject a tender and provide a reason.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        result = tenders_collection.update_one(
+            {"_id": ObjectId(tender_id)},
+            {"$set": {
+                "approval_status": "REJECTED", 
+                "rejected_at": datetime.now(),
+                "rejection_reason": payload.reason
+            }}
+        )
+        
+        if result.matched_count == 0:
+             return {"error": "Tender not found"}
+             
+        return {"status": "success", "message": f"Tender {tender_id} rejected"}
+        
+    except Exception as e:
+        logger.error(f"Error rejecting tender: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/api/tenders/{tender_id}/report/pdf")
