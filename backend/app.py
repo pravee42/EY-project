@@ -395,6 +395,70 @@ def chat_with_tender(tender_id: str, payload: ChatPayload):
         return {"status": "error", "message": str(e)}
 
 
+@app.post("/api/tenders/{tender_id}/analyze-competitors")
+def analyze_competitors(tender_id: str):
+    """
+    Generates a competitor analysis using OpenAI.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        if not tender:
+            return {"error": "Tender not found"}
+            
+        context_data = {
+            "title": tender.get("title"),
+            "summary": tender.get("summary"),
+            "scope_of_supply": tender.get("scope_of_supply"),
+            "total_tender_price": tender.get("total_tender_price")
+        }
+        
+        import json
+        prompt = f"""
+        You are a Strategic Bid Manager for a large engineering firm.
+        Analyze this tender and provide:
+        1. List of 3-5 likely competitors (Global/Indian) for this specific work.
+        2. A "Win Probability" score (0-100%).
+        3. Key risks.
+        
+        TENDER DATA:
+        {json.dumps(context_data, default=str)}
+        
+        OUTPUT FORMAT:
+        Return ONLY valid JSON:
+        {{
+            "competitors": ["Comp A", "Comp B"],
+            "win_probability": 75,
+            "risks": ["Risk 1", "Risk 2"],
+            "rationale": "Brief explanation..."
+        }}
+        """
+        
+        from agents.llm_client import call_llm
+        response_text = call_llm(prompt)
+        
+        # Parse JSON from LLM
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+            
+        analysis = json.loads(response_text)
+        
+        # Save to DB
+        tenders_collection.update_one(
+            {"_id": ObjectId(tender_id)},
+            {"$set": {"competitor_analysis": analysis}}
+        )
+        
+        return {"status": "success", "data": analysis}
+        
+    except Exception as e:
+        logger.error(f"Error in competitor analysis: {e}")
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

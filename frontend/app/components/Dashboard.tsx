@@ -27,6 +27,12 @@ interface Tender {
     final_report_pdf_path?: string;
     category?: string;
     total_tender_price?: number;
+    competitor_analysis?: {
+        competitors: string[];
+        win_probability: number;
+        risks: string[];
+        rationale: string;
+    };
 }
 
 interface CeleryTask {
@@ -245,6 +251,21 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
     const isRejected = tender.approval_status === "REJECTED";
     const isPending = !isApproved && !isRejected && tender.pricing_processed; // Assuming pending if pricing done but not approved
 
+    // Competitor Intel State
+    const [analyzing, setAnalyzing] = useState(false);
+
+    const runAnalysis = async () => {
+        setAnalyzing(true);
+        try {
+            await fetch(`${API_BASE}/api/tenders/${tender._id}/analyze-competitors`, { method: "POST" });
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setAnalyzing(false);
+        }
+    };
+
     return (
         <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-5">
             <div className="flex justify-between items-start">
@@ -268,6 +289,46 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                         <div className="w-4 h-[1px] bg-gray-200" />
                         <StageDot label="Master" active={!!tender.master_processed} final />
                     </div>
+
+                    {/* Competitor Analysis Section */}
+                    {tender.competitor_analysis ? (
+                        <div className="mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="font-bold text-slate-700 flex items-center gap-1">
+                                    <Activity className="h-3 w-3 text-indigo-500" /> Market Intel
+                                </span>
+                                <span className={cn("px-2 py-0.5 rounded-full font-bold",
+                                    tender.competitor_analysis.win_probability > 70 ? "bg-green-100 text-green-700" :
+                                        tender.competitor_analysis.win_probability > 40 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"
+                                )}>
+                                    {tender.competitor_analysis.win_probability}% Win Prob.
+                                </span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <span className="text-slate-400 uppercase tracking-wider text-[10px]">Likely Competitors</span>
+                                    <div className="text-slate-700 font-medium">{tender.competitor_analysis.competitors.join(", ")}</div>
+                                </div>
+                                <div>
+                                    <span className="text-slate-400 uppercase tracking-wider text-[10px]">Key Risks</span>
+                                    <div className="text-slate-700 font-medium truncate" title={tender.competitor_analysis.risks.join(", ")}>
+                                        {tender.competitor_analysis.risks[0]}...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mb-4">
+                            <button
+                                onClick={runAnalysis}
+                                disabled={analyzing}
+                                className="text-xs text-indigo-600 font-medium flex items-center gap-1 hover:underline disabled:opacity-50"
+                            >
+                                {analyzing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <BarChart className="h-3 w-3" />}
+                                {analyzing ? "Analyzing Competitors..." : "Generate Competitor Intel"}
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex flex-col items-end gap-3 pl-4 border-l border-gray-50 min-w-[140px]">
@@ -299,7 +360,7 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                 <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between bg-amber-50/30 -mx-5 -mb-5 px-5 py-3">
                     <span className="text-xs font-medium text-amber-800 flex items-center gap-2">
                         <AlertCircle className="h-4 w-4" />
-                        Please review before Master Agent processing
+                        Review required
                     </span>
                     <div className="flex gap-3">
                         <RejectionDialog tenderId={tender._id} onRefresh={onRefresh} />
@@ -310,7 +371,7 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                             }}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow-sm transition-all"
                         >
-                            Approve Tender
+                            Approve
                         </button>
                     </div>
                 </div>
@@ -335,6 +396,7 @@ function ChatBubble({ tenderId, title }: { tenderId?: string, title: string }) {
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
+    const [listening, setListening] = useState(false);
 
     const handleSend = async () => {
         if (!input.trim() || !tenderId) return;
@@ -357,6 +419,28 @@ function ChatBubble({ tenderId, title }: { tenderId?: string, title: string }) {
         } finally {
             setLoading(false);
         }
+    };
+
+    // Voice Handler
+    const startListening = () => {
+        if (!('webkitSpeechRecognition' in window)) {
+            alert("Voice input not supported in this browser.");
+            return;
+        }
+
+        const recognition = new (window as any).webkitSpeechRecognition();
+        recognition.lang = 'en-US';
+        recognition.start();
+        setListening(true);
+
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setInput(transcript);
+            setListening(false);
+        };
+
+        recognition.onerror = () => setListening(false);
+        recognition.onend = () => setListening(false);
     };
 
     useEffect(() => {
@@ -404,9 +488,15 @@ function ChatBubble({ tenderId, title }: { tenderId?: string, title: string }) {
                     </div>
 
                     <div className="p-3 border-t border-gray-100 bg-white flex gap-2">
+                        <button
+                            onClick={startListening}
+                            className={cn("text-indigo-600 p-1 rounded hover:bg-indigo-50", listening && "bg-red-50 text-red-600 animate-pulse")}
+                        >
+                            <Mic className="h-4 w-4" />
+                        </button>
                         <input
                             className="flex-1 text-xs outline-none text-slate-700"
-                            placeholder="Type a question..."
+                            placeholder={listening ? "Listening..." : "Type a question..."}
                             value={input}
                             onChange={e => setInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleSend()}
