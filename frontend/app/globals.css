@@ -20,42 +20,56 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
 }
 
 :root {
-  --background: hsl(224 71% 4%);
-  --foreground: hsl(213 31% 91%);
+  /* White Base */
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(222.2 84% 4.9%);
 
-  --card: hsl(224 71% 4%);
-  --card-foreground: hsl(213 31% 91%);
+  /* Card White */
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(222.2 84% 4.9%);
 
-  --popover: hsl(224 71% 4%);
-  --popover-foreground: hsl(215 20.2% 65.1%);
+  /* Popover White */
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(222.2 84% 4.9%);
 
-  --primary: hsl(210 40% 98%);
-  --primary-foreground: hsl(222.2 47.4% 1.2%);
+  /* Primary Purple #6366F1 */
+  --primary: hsl(243 75% 59%);
+  --primary-foreground: hsl(210 40% 98%);
 
-  --secondary: hsl(217.2 32.6% 17.5%);
-  --secondary-foreground: hsl(210 40% 98%);
+  /* Secondary Soft Purple */
+  --secondary: hsl(243 75% 96%);
+  --secondary-foreground: hsl(222.2 47.4% 11.2%);
 
-  --muted: hsl(217.2 32.6% 17.5%);
-  --muted-foreground: hsl(215 20.2% 65.1%);
+  /* Muted Slate */
+  --muted: hsl(210 40% 96.1%);
+  --muted-foreground: hsl(215.4 16.3% 46.9%);
 
-  --accent: hsl(217.2 32.6% 17.5%);
-  --accent-foreground: hsl(210 40% 98%);
+  /* Accent Hover */
+  --accent: hsl(243 75% 96%);
+  /* --accent: hsl(210 40% 96.1%); */
+  --accent-foreground: hsl(222.2 47.4% 11.2%);
 
-  --destructive: hsl(0 62.8% 30.6%);
+  /* Destructive Red */
+  --destructive: hsl(0 84.2% 60.2%);
   --destructive-foreground: hsl(210 40% 98%);
 
-  --border: hsl(217.2 32.6% 17.5%);
-  --input: hsl(217.2 32.6% 17.5%);
-  --ring: hsl(212.7 26.8% 83.9%);
+  /* Borders */
+  --border: hsl(214.3 31.8% 91.4%);
+  --input: hsl(214.3 31.8% 91.4%);
+  --ring: hsl(243 75% 59%);
+
+  --radius: 0.5rem;
 }
 
 body {
-  background-color: var(--background);
+  background-color: hsl(210 40% 98%);
+  /* Slightly off-white background for app */
   color: var(--foreground);
-  background-image:
-    radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.08), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.08), transparent 25%);
+  font-family: 'Inter', sans-serif;
 }

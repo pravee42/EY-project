@@ -336,6 +336,64 @@ def get_task_details(task_id: str):
     
     return task
 
+class ChatPayload(BaseModel):
+    query: str
+
+@app.post("/api/tenders/{tender_id}/chat")
+def chat_with_tender(tender_id: str, payload: ChatPayload):
+    """
+    Chat with a specific tender's data using OpenAI.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        if not tender:
+            return {"error": "Tender not found"}
+            
+        # Serialize tender data for context
+        # We limit what we send to avoid huge context windows if possible, 
+        # but for now sending the main fields is good.
+        context_data = {
+            "title": tender.get("title"),
+            "summary": tender.get("summary"),
+            "scope_of_supply": tender.get("scope_of_supply"),
+            "technical_recommendations": tender.get("technical_recommendations"),
+            "pricing_table": tender.get("pricing_table"),
+            "total_tender_price": tender.get("total_tender_price")
+        }
+        
+        import json
+        prompt = f"""
+        You are an intelligent procurement assistant.
+        The user is asking a question about a specific tender.
+        
+        TENDER DATA:
+        {json.dumps(context_data, default=str)}
+        
+        USER QUESTION:
+        {payload.query}
+        
+        Answer concisely and professionally based ONLY on the tender data provided.
+        If the answer is not in the data, say "I cannot find that information in the tender documents."
+        """
+        
+        # We need to import call_llm here or at top level. 
+        # Since it's used in agents, let's import it.
+        from agents.llm_client import call_llm
+        
+        response = call_llm(prompt)
+        
+        if not response:
+            return {"answer": "I'm sorry, I couldn't process that request right now."}
+            
+        return {"answer": response}
+        
+    except Exception as e:
+        logger.error(f"Error in chat endpoint: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 if __name__ == "__main__":
     import uvicorn
