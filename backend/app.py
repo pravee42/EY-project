@@ -459,6 +459,78 @@ def analyze_competitors(tender_id: str):
         logger.error(f"Error in competitor analysis: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/tenders/{tender_id}/optimize-bid")
+def optimize_bid(tender_id: str):
+    """
+    Generates a winning bid price and strategy using OpenAI.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        if not tender:
+            return {"error": "Tender not found"}
+            
+        # We need the cost estimate and competitor analysis to do this well
+        if not tender.get("total_tender_price"):
+             return {"error": "Cost estimation not yet completed by Pricing Agent."}
+             
+        competitor_analysis = tender.get("competitor_analysis", {})
+        
+        context_data = {
+            "title": tender.get("title"),
+            "estimated_cost": tender.get("total_tender_price"),
+            "competitors": competitor_analysis.get("competitors", []),
+            "win_probability": competitor_analysis.get("win_probability", 50)
+        }
+        
+        import json
+        prompt = f"""
+        You are a Senior Pricing Strategist.
+        Based on the estimated internal cost and the competitive landscape, recommend a Winning Bid Price.
+        
+        DATA:
+        {json.dumps(context_data, default=str)}
+        
+        TASK:
+        1. Determine an optimal profit margin (e.g., 10-25%) based on the win probability and competitors. 
+           (Lower margin if competition is high/win prob is low).
+        2. Calculate the Final Bid Price.
+        3. Explain the strategy.
+        
+        OUTPUT FORMAT (JSON ONLY):
+        {{
+            "recommended_margin_percentage": 15,
+            "recommended_bid_price": 1500000,
+            "strategy_rationale": "Aggressive pricing needed due to presence of Competitor X...",
+            "likelihood_to_win_with_this_price": "High"
+        }}
+        """
+        
+        from agents.llm_client import call_llm
+        response_text = call_llm(prompt)
+        
+        # Parse JSON
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+            
+        optimization = json.loads(response_text)
+        
+        # Save to DB
+        tenders_collection.update_one(
+            {"_id": ObjectId(tender_id)},
+            {"$set": {"bid_optimization": optimization}}
+        )
+        
+        return {"status": "success", "data": optimization}
+        
+    except Exception as e:
+        logger.error(f"Error in bid optimization: {e}")
+        return {"status": "error", "message": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

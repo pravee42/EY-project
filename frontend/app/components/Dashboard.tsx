@@ -33,6 +33,12 @@ interface Tender {
         risks: string[];
         rationale: string;
     };
+    bid_optimization?: {
+        recommended_margin_percentage: number;
+        recommended_bid_price: number;
+        strategy_rationale: string;
+        likelihood_to_win_with_this_price: string;
+    };
 }
 
 interface CeleryTask {
@@ -249,20 +255,33 @@ function FilterTabs({ current, onChange }: any) {
 function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => void }) {
     const isApproved = tender.approval_status === "APPROVED";
     const isRejected = tender.approval_status === "REJECTED";
-    const isPending = !isApproved && !isRejected && tender.pricing_processed; // Assuming pending if pricing done but not approved
+    const isPending = !isApproved && !isRejected && tender.pricing_processed;
 
-    // Competitor Intel State
-    const [analyzing, setAnalyzing] = useState(false);
+    // States
+    const [analyzingComp, setAnalyzingComp] = useState(false);
+    const [optimizingBid, setOptimizingBid] = useState(false);
 
-    const runAnalysis = async () => {
-        setAnalyzing(true);
+    const runCompetitorAnalysis = async () => {
+        setAnalyzingComp(true);
         try {
             await fetch(`${API_BASE}/api/tenders/${tender._id}/analyze-competitors`, { method: "POST" });
             onRefresh();
         } catch (e) {
             console.error(e);
         } finally {
-            setAnalyzing(false);
+            setAnalyzingComp(false);
+        }
+    };
+
+    const runBidOptimization = async () => {
+        setOptimizingBid(true);
+        try {
+            await fetch(`${API_BASE}/api/tenders/${tender._id}/optimize-bid`, { method: "POST" });
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setOptimizingBid(false);
         }
     };
 
@@ -270,16 +289,17 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
         <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all p-5">
             <div className="flex justify-between items-start">
                 <div className="flex-1">
+                    {/* Header Badges */}
                     <div className="flex items-center gap-3 mb-2">
                         <span className="text-[10px] font-bold tracking-wider text-gray-400 uppercase">{tender.category || "General"}</span>
                         {isApproved && <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><CheckCircle className="h-3 w-3" /> Approved</span>}
                         {isRejected && <span className="flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full"><XCircle className="h-3 w-3" /> Rejected</span>}
                         {isPending && <span className="flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full"><AlertCircle className="h-3 w-3" /> Action Required</span>}
                     </div>
+
                     <h3 className="text-lg font-semibold text-slate-800 mb-1 leading-tight">{tender.title}</h3>
                     <p className="text-sm text-slate-500 line-clamp-2 mb-4 max-w-2xl">{tender.summary}</p>
 
-                    {/* Stages Stepper */}
                     <div className="flex items-center gap-1 mb-4">
                         <StageDot label="Sales" active={!!tender.sales_processed} />
                         <div className="w-4 h-[1px] bg-gray-200" />
@@ -290,50 +310,78 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                         <StageDot label="Master" active={!!tender.master_processed} final />
                     </div>
 
-                    {/* Competitor Analysis Section */}
-                    {tender.competitor_analysis ? (
-                        <div className="mb-4 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs">
-                            <div className="flex items-center justify-between mb-2">
-                                <span className="font-bold text-slate-700 flex items-center gap-1">
-                                    <Activity className="h-3 w-3 text-indigo-500" /> Market Intel
-                                </span>
-                                <span className={cn("px-2 py-0.5 rounded-full font-bold",
-                                    tender.competitor_analysis.win_probability > 70 ? "bg-green-100 text-green-700" :
-                                        tender.competitor_analysis.win_probability > 40 ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"
-                                )}>
-                                    {tender.competitor_analysis.win_probability}% Win Prob.
-                                </span>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <span className="text-slate-400 uppercase tracking-wider text-[10px]">Likely Competitors</span>
-                                    <div className="text-slate-700 font-medium">{tender.competitor_analysis.competitors.join(", ")}</div>
-                                </div>
-                                <div>
-                                    <span className="text-slate-400 uppercase tracking-wider text-[10px]">Key Risks</span>
-                                    <div className="text-slate-700 font-medium truncate" title={tender.competitor_analysis.risks.join(", ")}>
-                                        {tender.competitor_analysis.risks[0]}...
+                    {/* Insights Container */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+
+                        {/* Competitor Intel */}
+                        <div>
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                <Activity className="h-3 w-3" /> Market Intelligence
+                            </h4>
+                            {tender.competitor_analysis ? (
+                                <div className="text-xs space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Win Probability</span>
+                                        <span className={cn("font-bold",
+                                            tender.competitor_analysis.win_probability > 70 ? "text-emerald-600" : "text-amber-600"
+                                        )}>{tender.competitor_analysis.win_probability}%</span>
+                                    </div>
+                                    <div className="text-slate-600">
+                                        <span className="font-semibold text-slate-700">Competitors:</span> {tender.competitor_analysis.competitors.slice(0, 2).join(", ")}
                                     </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <button
+                                    onClick={runCompetitorAnalysis}
+                                    disabled={analyzingComp}
+                                    className="text-xs text-indigo-600 font-medium flex items-center gap-1 hover:underline disabled:opacity-50"
+                                >
+                                    {analyzingComp ? <RefreshCw className="h-3 w-3 animate-spin" /> : "Analyze Competitors"}
+                                </button>
+                            )}
                         </div>
-                    ) : (
-                        <div className="mb-4">
-                            <button
-                                onClick={runAnalysis}
-                                disabled={analyzing}
-                                className="text-xs text-indigo-600 font-medium flex items-center gap-1 hover:underline disabled:opacity-50"
-                            >
-                                {analyzing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <BarChart className="h-3 w-3" />}
-                                {analyzing ? "Analyzing Competitors..." : "Generate Competitor Intel"}
-                            </button>
+
+                        {/* Bid Strategist */}
+                        <div className="border-l border-slate-200 pl-4">
+                            <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-2 flex items-center gap-1">
+                                <BarChart className="h-3 w-3" /> Bid Strategist
+                            </h4>
+                            {tender.bid_optimization ? (
+                                <div className="text-xs space-y-2">
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Recommended Bid</span>
+                                        <span className="font-mono font-bold text-indigo-600">
+                                            ₹{(tender.bid_optimization.recommended_bid_price / 100000).toFixed(2)}L
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between items-center">
+                                        <span className="text-slate-600">Target Margin</span>
+                                        <span className="font-bold text-emerald-600">
+                                            {tender.bid_optimization.recommended_margin_percentage}%
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 italic mt-1 leading-tight">
+                                        "{tender.bid_optimization.strategy_rationale.slice(0, 60)}..."
+                                    </p>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={runBidOptimization}
+                                    disabled={optimizingBid || !tender.competitor_analysis}
+                                    className="text-xs text-indigo-600 font-medium flex items-center gap-1 hover:underline disabled:opacity-50"
+                                >
+                                    {optimizingBid ? <RefreshCw className="h-3 w-3 animate-spin" /> : "Generat Strategy"}
+                                    {!tender.competitor_analysis && <span className="text-[9px] text-gray-400 ml-1">(Requires Comp. Analysis)</span>}
+                                </button>
+                            )}
                         </div>
-                    )}
+                    </div>
+
                 </div>
 
                 <div className="flex flex-col items-end gap-3 pl-4 border-l border-gray-50 min-w-[140px]">
                     <div className="text-right">
-                        <div className="text-[10px] text-gray-400 uppercase">Est. Value</div>
+                        <div className="text-[10px] text-gray-400 uppercase">Cost Estimate</div>
                         <div className="text-lg font-mono font-bold text-slate-700">
                             {tender.total_tender_price ? `₹${(tender.total_tender_price / 100000).toFixed(1)}L` : '--'}
                         </div>
@@ -360,7 +408,7 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                 <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between bg-amber-50/30 -mx-5 -mb-5 px-5 py-3">
                     <span className="text-xs font-medium text-amber-800 flex items-center gap-2">
                         <AlertCircle className="h-4 w-4" />
-                        Review required
+                        Approvals
                     </span>
                     <div className="flex gap-3">
                         <RejectionDialog tenderId={tender._id} onRefresh={onRefresh} />
