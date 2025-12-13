@@ -652,14 +652,31 @@ def get_session_history(session_id: str):
     session["_id"] = str(session["_id"])
     return session
 
+@app.delete("/api/chat/sessions/{session_id}")
+def delete_chat_session(session_id: str):
+    """Delete a chat session"""
+    if chat_sessions_collection is None:
+        return {"error": "DB Error"}
+    
+    result = chat_sessions_collection.delete_one({"_id": ObjectId(session_id)})
+    if result.deleted_count == 0:
+         raise HTTPException(status_code=404, detail="Session not found")
+         
+    return {"status": "success", "session_id": session_id}
+
+class ExtendedChatPayload(BaseModel):
+    query: str
+    tender_id: str = None
+
 @app.post("/api/chat/sessions/{session_id}/message")
-def send_chat_message(session_id: str, payload: ChatPayload):
+def send_chat_message(session_id: str, payload: ExtendedChatPayload):
     """
     Send a message to a specific session.
     1. Fetch History
-    2. Fetch RAG Context
+    2. Fetch RAG Context (Generic OR Tender Specific)
     3. Call LLM with Context + History
-    4. Save user & AI message
+    4. Auto-Rename Session if new
+    5. Save user & AI message
     """
     if chat_sessions_collection is None:
         return {"error": "DB Error"}
@@ -677,25 +694,45 @@ def send_chat_message(session_id: str, payload: ChatPayload):
         
     history = session.get("messages", [])
     
-    # 2. Logic similar to previous global chat (Intent Detection)
-    # RAG Context Fetch
+    # 2. RAG Context Fetch
     context_str = ""
+    context_type = "GENERAL_OVERVIEW"
+    
     if tenders_collection is not None:
-        # Fetch generic high-level context
-        recent = list(tenders_collection.find({}, {
-            "title": 1, "client_name": 1, "total_tender_price": 1, 
-            "approval_status": 1, "competitor_analysis": 1
-        }).sort("scraped_at", -1).limit(15))
-        context_str = json.dumps(recent, default=str)
+        # A. Specific Tender Context
+        if payload.tender_id and payload.tender_id != "all":
+            try:
+                tender = tenders_collection.find_one({"_id": ObjectId(payload.tender_id)})
+                if tender:
+                    context_data = {
+                        "title": tender.get("title"),
+                        "client": tender.get("client_name"),
+                        "scope": tender.get("scope_of_supply"),
+                        "status": tender.get("approval_status"),
+                        "pricing": tender.get("total_tender_price"),
+                        "analysis": tender.get("competitor_analysis"),
+                        "strategy": tender.get("bid_optimization")
+                    }
+                    context_str = json.dumps(context_data, default=str)
+                    context_type = f"SPECIFIC_TENDER_FOCUS: {tender.get('title')}"
+            except Exception as e:
+                logger.error(f"Error fetching specific tender context: {e}")
+        
+        # B. General Context (Fallback)
+        if not context_str:
+            recent = list(tenders_collection.find({}, {
+                "title": 1, "client_name": 1, "total_tender_price": 1, 
+                "approval_status": 1, "competitor_analysis": 1
+            }).sort("scraped_at", -1).limit(10))
+            context_str = json.dumps(recent, default=str)
     
     # 3. Construct Prompt with History
-    # Format last 5 messages for context
     chat_history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-6:]])
     
     prompt = f"""
     You are 'RFP Yukti', an advanced procurement AI assistant.
     
-    SYSTEM CONTEXT (Recent Tenders for RAG):
+    SYSTEM CONTEXT ({context_type}):
     {context_str}
     
     CHAT HISTORY:
@@ -751,17 +788,39 @@ def send_chat_message(session_id: str, payload: ChatPayload):
         {"role": "ai", "content": ai_msg_content, "data": extracted_data, "timestamp": datetime.now()}
     ]
     
+    update_fields = {
+        "updated_at": datetime.now()
+    }
+    
+    # --- Auto-Rename Logic ---
+    # Rename if title is default "New Chat" and we have a user message
+    if session.get("title") == "New Chat" or session.get("title").startswith("Chat "):
+        try:
+            # Generate a short 3-5 word title based on the user's query
+            title_prompt = f"Summarize this query into a very short 3-5 word title (No quotes): {user_query}"
+            new_title = call_llm(title_prompt).strip()
+            # Remove any quotes if LLM added them
+            new_title = new_title.replace('"', '').replace("'", "")
+            update_fields["title"] = new_title
+        except Exception as e:
+            logger.warning(f"Failed to auto-rename chat: {e}")
+
     chat_sessions_collection.update_one(
         {"_id": ObjectId(session_id)},
         {
             "$push": {"messages": {"$each": new_messages}},
-            "$set": {"updated_at": datetime.now()}
+            "$set": update_fields
         }
     )
     
-    return {"answer": ai_msg_content, "data": extracted_data}
+    return {
+        "answer": ai_msg_content, 
+        "data": extracted_data,
+        "new_title": update_fields.get("title") # Return new title if renamed
+    }
 
-# --- Chat API ---
+# --- Chat API (Legacy/Global) ---
+
 class ChatQuery(BaseModel):
     query: str
 

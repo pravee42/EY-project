@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle, XCircle, AlertCircle, RefreshCw, BarChart, Activity,
     FileText, Search, MessageSquare, Mic, Send, X, Filter, ChevronRight,
-    LayoutDashboard, Settings, List
+    LayoutDashboard, Settings, List, Trash2
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
@@ -52,7 +52,6 @@ interface CeleryTask {
     details?: any;
 }
 
-// --- Dashboard Component ---
 // --- Dashboard Component ---
 export default function Dashboard() {
     const [tenders, setTenders] = useState<Tender[]>([]);
@@ -742,9 +741,17 @@ function GlobalChat() {
     const [loading, setLoading] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
 
-    // Initial Load: Fetch Sessions
+    // Tender Context Selector
+    const [tenders, setTenders] = useState<{ _id: string, title: string }[]>([]);
+    const [selectedTender, setSelectedTender] = useState<string>("all");
+
+    // Initial Load: Fetch Sessions & Tenders
     useEffect(() => {
         fetchSessions();
+        // Fetch tenders for dropdown
+        fetch(`${API_BASE}/tenders`).then(res => res.json()).then(data => {
+            setTenders(data.map((t: any) => ({ _id: t._id, title: t.title })));
+        }).catch(err => console.error(err));
     }, []);
 
     const fetchSessions = async () => {
@@ -762,12 +769,27 @@ function GlobalChat() {
         }
     };
 
+    const deleteSession = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!confirm("Are you sure you want to delete this chat?")) return;
+
+        try {
+            await fetch(`${API_BASE}/api/chat/sessions/${id}`, { method: "DELETE" });
+            const newSessions = sessions.filter(s => s._id !== id);
+            setSessions(newSessions);
+            if (currentSessionId === id) {
+                if (newSessions.length > 0) selectSession(newSessions[0]._id);
+                else createNewSession();
+            }
+        } catch (e) { console.error(e); }
+    };
+
     const createNewSession = async () => {
         try {
             const res = await fetch(`${API_BASE}/api/chat/sessions`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title: `Chat ${new Date().toLocaleTimeString()}` })
+                body: JSON.stringify({ title: `New Chat` })
             });
             const data = await res.json();
             setSessions(prev => [{ _id: data.session_id, title: data.title }, ...prev]);
@@ -804,7 +826,7 @@ function GlobalChat() {
             const res = await fetch(`${API_BASE}/api/chat/sessions/${currentSessionId}/message`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: userQuery })
+                body: JSON.stringify({ query: userQuery, tender_id: selectedTender })
             });
             const data = await res.json();
 
@@ -814,7 +836,10 @@ function GlobalChat() {
                 data: data.data
             }]);
 
-            // Refresh sessions list to update "last updated" order? (Optional)
+            // Auto-Rename Update
+            if (data.new_title) {
+                setSessions(prev => prev.map(s => s._id === currentSessionId ? { ...s, title: data.new_title } : s));
+            }
 
         } catch (e) {
             setMessages(prev => [...prev, { role: 'system', content: "Connection Error: Backend unreachable." }]);
@@ -844,18 +869,26 @@ function GlobalChat() {
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 space-y-1">
                     {sessions.map(s => (
-                        <button
-                            key={s._id}
-                            onClick={() => selectSession(s._id)}
-                            className={cn(
-                                "w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium truncate transition-all",
-                                currentSessionId === s._id
-                                    ? "bg-indigo-50 text-indigo-700 shadow-sm"
-                                    : "text-slate-600 hover:bg-gray-50"
-                            )}
-                        >
-                            {s.title}
-                        </button>
+                        <div key={s._id} className="relative group">
+                            <button
+                                onClick={() => selectSession(s._id)}
+                                className={cn(
+                                    "w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium truncate transition-all pr-8",
+                                    currentSessionId === s._id
+                                        ? "bg-indigo-50 text-indigo-700 shadow-sm"
+                                        : "text-slate-600 hover:bg-gray-50"
+                                )}
+                            >
+                                {s.title}
+                            </button>
+                            <button
+                                onClick={(e) => deleteSession(e, s._id)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded transition-all"
+                                title="Delete Chat"
+                            >
+                                <Trash2 className="h-3 w-3" />
+                            </button>
+                        </div>
                     ))}
                 </div>
             </div>
@@ -863,18 +896,35 @@ function GlobalChat() {
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col relative">
                 {/* Header */}
-                <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3 shadow-sm z-10">
-                    <div className="h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
-                        <MessageSquare className="h-4 w-4" />
-                    </div>
-                    <div>
-                        <h2 className="text-sm font-bold text-slate-900">
-                            {sessions.find(s => s._id === currentSessionId)?.title || "Global Intelligence"}
-                        </h2>
-                        <div className="flex items-center gap-1.5">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            <p className="text-[10px] text-slate-500">Connected to Live Database</p>
+                <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm z-10 transition-all">
+                    <div className="flex items-center gap-3">
+                        <div className="h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                            <MessageSquare className="h-4 w-4" />
                         </div>
+                        <div>
+                            <h2 className="text-sm font-bold text-slate-900">
+                                {sessions.find(s => s._id === currentSessionId)?.title || "Global Intelligence"}
+                            </h2>
+                            <div className="flex items-center gap-1.5">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                <p className="text-[10px] text-slate-500">Connected to Live Database</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Tender Context Dropdown */}
+                    <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Context:</span>
+                        <select
+                            value={selectedTender}
+                            onChange={(e) => setSelectedTender(e.target.value)}
+                            className="text-xs border-none bg-transparent font-medium text-slate-600 focus:ring-0 cursor-pointer outline-none w-48 truncate"
+                        >
+                            <option value="all">Global (All Tenders)</option>
+                            {tenders.map(t => (
+                                <option key={t._id} value={t._id}>{t.title ? t.title.substring(0, 30) + (t.title.length > 30 ? '...' : '') : 'Untitled'}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
