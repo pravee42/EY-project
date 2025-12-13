@@ -17,12 +17,14 @@ try:
     inventory_collection = db['inventory']
     test_pricing_collection = db['test_pricing']
     celery_tasks_collection = db['celery_tasks']
+    chat_sessions_collection = db['chat_sessions']
     
     # Create indexes
     tenders_collection.create_index("title", unique=True)
     tenders_collection.create_index("scraped_at")
     inventory_collection.create_index("sku_id", unique=True)
     test_pricing_collection.create_index("test_name", unique=True)
+    chat_sessions_collection.create_index("updated_at")
 
 except Exception as e:
     print(f"Error connecting to MongoDB: {e}")
@@ -35,3 +37,4 @@ if not client:
     inventory_collection = None
     test_pricing_collection = None
     celery_tasks_collection = None
+    chat_sessions_collection = None

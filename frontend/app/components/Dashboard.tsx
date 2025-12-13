@@ -732,26 +732,76 @@ function RejectionDialog({ tenderId, onRefresh }: { tenderId?: string, onRefresh
         </Dialog.Root>
     )
 }
-// --- Global Chat Component (Bloomberg Terminal Style) ---
-// --- Global Chat Component (Themed) ---
+
+// --- Global Chat Component (Themed Multi-Session) ---
 function GlobalChat() {
-    const [messages, setMessages] = useState<{ role: 'user' | 'ai' | 'system', text: string, data?: any }[]>([
-        { role: 'system', text: "Welcome to RFP Yukti Intelligence.\nI can answer questions about your tenders or help you add new ones." }
-    ]);
+    const [sessions, setSessions] = useState<{ _id: string, title: string }[]>([]);
+    const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+    const [messages, setMessages] = useState<{ role: 'user' | 'ai' | 'system', content: string, data?: any }[]>([]);
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
     const bottomRef = useRef<HTMLDivElement>(null);
 
+    // Initial Load: Fetch Sessions
+    useEffect(() => {
+        fetchSessions();
+    }, []);
+
+    const fetchSessions = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/sessions`);
+            const data = await res.json();
+            setSessions(data);
+            if (data.length > 0 && !currentSessionId) {
+                selectSession(data[0]._id);
+            } else if (data.length === 0) {
+                createNewSession();
+            }
+        } catch (e) {
+            console.error("Failed to fetch sessions", e);
+        }
+    };
+
+    const createNewSession = async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/sessions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: `Chat ${new Date().toLocaleTimeString()}` })
+            });
+            const data = await res.json();
+            setSessions(prev => [{ _id: data.session_id, title: data.title }, ...prev]);
+            selectSession(data.session_id);
+        } catch (e) {
+            console.error("Failed create session", e);
+        }
+    };
+
+    const selectSession = async (id: string) => {
+        setCurrentSessionId(id);
+        setLoading(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/sessions/${id}`);
+            const data = await res.json();
+            setMessages(data.messages || []);
+        } catch (e) {
+            console.error("Failed fetch history", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleSend = async () => {
-        if (!input.trim()) return;
+        if (!input.trim() || !currentSessionId) return;
 
         const userQuery = input;
         setInput("");
-        setMessages(prev => [...prev, { role: 'user', text: userQuery }]);
+        // Optimistic Update
+        setMessages(prev => [...prev, { role: 'user', content: userQuery }]);
         setLoading(true);
 
         try {
-            const res = await fetch(`${API_BASE}/api/chat/global`, {
+            const res = await fetch(`${API_BASE}/api/chat/sessions/${currentSessionId}/message`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ query: userQuery })
@@ -760,12 +810,14 @@ function GlobalChat() {
 
             setMessages(prev => [...prev, {
                 role: 'ai',
-                text: data.answer,
+                content: data.answer,
                 data: data.data
             }]);
 
+            // Refresh sessions list to update "last updated" order? (Optional)
+
         } catch (e) {
-            setMessages(prev => [...prev, { role: 'system', text: "Connection Error: Backend unreachable." }]);
+            setMessages(prev => [...prev, { role: 'system', content: "Connection Error: Backend unreachable." }]);
         } finally {
             setLoading(false);
         }
@@ -776,117 +828,151 @@ function GlobalChat() {
     }, [messages]);
 
     return (
-        <div className="flex-1 flex flex-col bg-gray-50 font-sans h-full overflow-hidden relative">
+        <div className="flex h-full bg-gray-50 font-sans overflow-hidden">
 
-            {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3 shadow-sm z-10">
-                <div className="h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
-                    <MessageSquare className="h-5 w-5" />
-                </div>
-                <div>
-                    <h2 className="text-lg font-bold text-slate-900">Global Intelligence</h2>
-                    <p className="text-xs text-slate-500">Ask about tenders, market insights, or add new opportunities.</p>
-                </div>
-            </div>
-
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {messages.map((m, i) => (
-                    <div key={i} className={cn("flex flex-col max-w-3xl", m.role === 'user' ? "ml-auto items-end" : m.role === 'system' ? "mx-auto items-center" : "mr-auto items-start")}>
-
-                        {m.role !== 'system' && (
-                            <span className="text-[10px] text-gray-400 mb-1 px-1">
-                                {m.role === 'user' ? 'You' : 'Yukti AI'}
-                            </span>
-                        )}
-
-                        {m.role === 'system' ? (
-                            <div className="bg-gray-100 text-gray-500 text-xs px-3 py-1.5 rounded-full mb-4">
-                                {m.text}
-                            </div>
-                        ) : (
-                            <div className={cn(
-                                "p-4 rounded-2xl text-sm leading-relaxed shadow-sm",
-                                m.role === 'user' ? "bg-indigo-600 text-white rounded-tr-none" :
-                                    "bg-white border border-gray-100 text-slate-700 rounded-tl-none prose prose-indigo max-w-none prose-sm"
-                            )}>
-                                {/* Markdown Rendering */}
-                                <ReactMarkdown
-                                    components={{
-                                        // Customize lists to look native
-                                        ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-2" {...props} />,
-                                        ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-2" {...props} />,
-                                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
-                                        strong: ({ node, ...props }) => <span className="font-bold" {...props} />,
-                                        p: ({ node, ...props }) => <div className="mb-2 last:mb-0" {...props} />
-                                    }}
-                                >
-                                    {m.text}
-                                </ReactMarkdown>
-
-                                {/* Structured Data Display */}
-                                {m.data && (
-                                    <div className="mt-3 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
-                                        <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
-                                            <CheckCircle className="h-3 w-3 text-emerald-500" />
-                                            <span className="text-xs font-bold text-slate-600 uppercase">Captured Data</span>
-                                        </div>
-                                        <div className="p-3 text-xs space-y-1.5">
-                                            {Object.entries(m.data).map(([k, v]) => (
-                                                <div key={k} className="grid grid-cols-3 gap-2">
-                                                    <span className="font-semibold text-slate-500 capitalize">{k.replace(/_/g, " ")}:</span>
-                                                    <span className="col-span-2 text-slate-800 truncate" title={String(v)}>{String(v)}</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                ))}
-
-                {loading && (
-                    <div className="flex items-center gap-2 text-indigo-400 ml-4">
-                        <div className="flex gap-1">
-                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
-                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-75" />
-                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-150" />
-                        </div>
-                        <span className="text-xs font-medium">Processing...</span>
-                    </div>
-                )}
-                <div ref={bottomRef} />
-            </div>
-
-            {/* Input Area */}
-            <div className="p-6 bg-white border-t border-gray-100">
-                <div className="max-w-4xl mx-auto relative flex gap-3">
-                    <div className="flex-1 relative">
-                        <input
-                            className="w-full bg-gray-50 border border-gray-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 text-slate-800 text-sm px-4 py-3.5 rounded-xl outline-none transition-all placeholder-gray-400"
-                            placeholder="Type a command (e.g., 'List high value tenders' or 'Add new tender...')"
-                            value={input}
-                            onChange={e => setInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleSend()}
-                            autoFocus
-                        />
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
-                            {/* Placeholder for voice/attachment icons if needed */}
-                        </div>
-                    </div>
+            {/* Chat History Sidebar */}
+            <div className="w-64 bg-white border-r border-gray-200 flex flex-col z-20">
+                <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-700 text-sm">Chats</h3>
                     <button
-                        onClick={handleSend}
-                        disabled={!input.trim() || loading}
-                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-all shadow-lg shadow-indigo-200"
+                        onClick={createNewSession}
+                        className="p-1.5 hover:bg-indigo-50 text-indigo-600 rounded-md transition-colors" title="New Chat"
                     >
-                        <Send className="h-5 w-5" />
+                        <FileText className="h-4 w-4" /> {/* Using FileText as generic icon, ideally Plus */}
+                        <span className="sr-only">New Chat</span>
                     </button>
                 </div>
-                <div className="text-center mt-2">
-                    <p className="text-[10px] text-gray-400">
-                        AI can make mistakes. Please verify important tender details.
-                    </p>
+                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                    {sessions.map(s => (
+                        <button
+                            key={s._id}
+                            onClick={() => selectSession(s._id)}
+                            className={cn(
+                                "w-full text-left px-3 py-2.5 rounded-lg text-xs font-medium truncate transition-all",
+                                currentSessionId === s._id
+                                    ? "bg-indigo-50 text-indigo-700 shadow-sm"
+                                    : "text-slate-600 hover:bg-gray-50"
+                            )}
+                        >
+                            {s.title}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Main Chat Area */}
+            <div className="flex-1 flex flex-col relative">
+                {/* Header */}
+                <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3 shadow-sm z-10">
+                    <div className="h-8 w-8 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                        <MessageSquare className="h-4 w-4" />
+                    </div>
+                    <div>
+                        <h2 className="text-sm font-bold text-slate-900">
+                            {sessions.find(s => s._id === currentSessionId)?.title || "Global Intelligence"}
+                        </h2>
+                        <div className="flex items-center gap-1.5">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <p className="text-[10px] text-slate-500">Connected to Live Database</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+                    {messages.map((m, i) => (
+                        <div key={i} className={cn("flex flex-col max-w-3xl", m.role === 'user' ? "ml-auto items-end" : m.role === 'system' ? "mx-auto items-center" : "mr-auto items-start")}>
+
+                            {m.role !== 'system' && (
+                                <span className="text-[10px] text-gray-400 mb-1 px-1">
+                                    {m.role === 'user' ? 'You' : 'Yukti AI'}
+                                </span>
+                            )}
+
+                            {m.role === 'system' ? (
+                                <div className="bg-gray-100 text-gray-500 text-xs px-3 py-1.5 rounded-full mb-4 opacity-70">
+                                    {m.content}
+                                </div>
+                            ) : (
+                                <div className={cn(
+                                    "p-4 rounded-2xl text-sm leading-relaxed shadow-sm",
+                                    m.role === 'user' ? "bg-indigo-600 text-white rounded-tr-none" :
+                                        "bg-white border border-gray-100 text-slate-700 rounded-tl-none prose prose-indigo max-w-none prose-sm"
+                                )}>
+                                    {/* Markdown Rendering */}
+                                    <ReactMarkdown
+                                        components={{
+                                            ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-2" {...props} />,
+                                            ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-2" {...props} />,
+                                            li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                                            strong: ({ node, ...props }) => <span className="font-bold" {...props} />,
+                                            p: ({ node, ...props }) => <div className="mb-2 last:mb-0" {...props} />
+                                        }}
+                                    >
+                                        {m.content}
+                                    </ReactMarkdown>
+
+                                    {/* Structured Data Display */}
+                                    {m.data && (
+                                        <div className="mt-3 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden not-prose">
+                                            <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
+                                                <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                                <span className="text-xs font-bold text-slate-600 uppercase">Captured Data</span>
+                                            </div>
+                                            <div className="p-3 text-xs space-y-1.5">
+                                                {Object.entries(m.data).map(([k, v]) => (
+                                                    <div key={k} className="grid grid-cols-3 gap-2">
+                                                        <span className="font-semibold text-slate-500 capitalize">{k.replace(/_/g, " ")}:</span>
+                                                        <span className="col-span-2 text-slate-800 truncate" title={String(v)}>{String(v)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+
+                    {loading && (
+                        <div className="flex items-center gap-2 text-indigo-400 ml-4">
+                            <div className="flex gap-1">
+                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
+                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-75" />
+                                <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-150" />
+                            </div>
+                            <span className="text-xs font-medium">Processing...</span>
+                        </div>
+                    )}
+                    <div ref={bottomRef} />
+                </div>
+
+                {/* Input Area */}
+                <div className="p-6 bg-white border-t border-gray-100">
+                    <div className="max-w-4xl mx-auto relative flex gap-3">
+                        <div className="flex-1 relative">
+                            <input
+                                className="w-full bg-gray-50 border border-gray-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 text-slate-800 text-sm px-4 py-3.5 rounded-xl outline-none transition-all placeholder-gray-400"
+                                placeholder="Type a command (e.g., 'List high value tenders' or 'Add new tender...')"
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleSend()}
+                                autoFocus
+                            />
+                        </div>
+                        <button
+                            onClick={handleSend}
+                            disabled={!input.trim() || loading || !currentSessionId}
+                            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-all shadow-lg shadow-indigo-200"
+                        >
+                            <Send className="h-5 w-5" />
+                        </button>
+                    </div>
+                    <div className="text-center mt-2">
+                        <p className="text-[10px] text-gray-400">
+                            AI can make mistakes. Please verify important tender details.
+                        </p>
+                    </div>
                 </div>
             </div>
         </div>

@@ -600,6 +600,167 @@ def draft_proposal(tender_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+
+# --- Chat Session API ---
+from database.mongo import chat_sessions_collection
+
+class CreateSessionRequest(BaseModel):
+    title: str = "New Chat"
+
+class ChatMessageResult(BaseModel):
+    role: str
+    content: str
+    data: dict = None
+
+@app.get("/api/chat/sessions")
+def get_chat_sessions():
+    """List all chat sessions for the sidebar"""
+    if chat_sessions_collection is None:
+        return []
+    sessions = list(chat_sessions_collection.find({}, {"messages": 0}).sort("updated_at", -1))
+    for s in sessions:
+        s["_id"] = str(s["_id"])
+    return sessions
+
+@app.post("/api/chat/sessions")
+def create_chat_session(req: CreateSessionRequest):
+    """Create a new chat session"""
+    if chat_sessions_collection is None:
+        return {"error": "DB Error"}
+    
+    new_session = {
+        "title": req.title,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+        "messages": [
+            {"role": "system", "content": "Welcome to RFP Yukti Intelligence. I'm connected to your live tender database.", "timestamp": datetime.now()}
+        ]
+    }
+    res = chat_sessions_collection.insert_one(new_session)
+    return {"session_id": str(res.inserted_id), "title": req.title}
+
+@app.get("/api/chat/sessions/{session_id}")
+def get_session_history(session_id: str):
+    """Get full message history for a session"""
+    if chat_sessions_collection is None:
+        return {"error": "DB Error"}
+    
+    session = chat_sessions_collection.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    session["_id"] = str(session["_id"])
+    return session
+
+@app.post("/api/chat/sessions/{session_id}/message")
+def send_chat_message(session_id: str, payload: ChatPayload):
+    """
+    Send a message to a specific session.
+    1. Fetch History
+    2. Fetch RAG Context
+    3. Call LLM with Context + History
+    4. Save user & AI message
+    """
+    if chat_sessions_collection is None:
+        return {"error": "DB Error"}
+
+    from agents.llm_client import call_llm
+    import json
+    import re
+
+    user_query = payload.query
+    
+    # 1. Fetch Session
+    session = chat_sessions_collection.find_one({"_id": ObjectId(session_id)})
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    history = session.get("messages", [])
+    
+    # 2. Logic similar to previous global chat (Intent Detection)
+    # RAG Context Fetch
+    context_str = ""
+    if tenders_collection is not None:
+        # Fetch generic high-level context
+        recent = list(tenders_collection.find({}, {
+            "title": 1, "client_name": 1, "total_tender_price": 1, 
+            "approval_status": 1, "competitor_analysis": 1
+        }).sort("scraped_at", -1).limit(15))
+        context_str = json.dumps(recent, default=str)
+    
+    # 3. Construct Prompt with History
+    # Format last 5 messages for context
+    chat_history_text = "\n".join([f"{m['role'].upper()}: {m['content']}" for m in history[-6:]])
+    
+    prompt = f"""
+    You are 'RFP Yukti', an advanced procurement AI assistant.
+    
+    SYSTEM CONTEXT (Recent Tenders for RAG):
+    {context_str}
+    
+    CHAT HISTORY:
+    {chat_history_text}
+    
+    USER'S NEW MESSAGE:
+    "{user_query}"
+    
+    INSTRUCTIONS:
+    1. Answer the user's question using the System Context or Chat History.
+    2. If the user wants to ADD a tender, extract JSON details as before.
+    3. If they ask a followup (e.g. "What about the second one?"), use Chat History to resolve references.
+    4. Be concise and professional. Use Markdown for formatting.
+    
+    SPECIAL HANDLING:
+    - If user provides tender details to add, output valid JSON starting with "ADD_TENDER_JSON:".
+    """
+    
+    response_text = call_llm(prompt)
+    
+    # 4. Process Response (Check for ADD intent via special prefix)
+    ai_msg_content = response_text
+    extracted_data = None
+    
+    if "ADD_TENDER_JSON:" in response_text:
+        try:
+            json_part = response_text.split("ADD_TENDER_JSON:")[1].strip()
+            if "```" in json_part: # Cleanup markdown
+                json_part = json_part.split("```")[1]
+                if json_part.startswith("json"): json_part = json_part[4:]
+            
+            tender_data = json.loads(json_part)
+            extracted_data = tender_data
+            
+            # Insert Tender
+            if tenders_collection is not None:
+                tender_data["scraped_at"] = datetime.now()
+                tender_data["source"] = "CHAT"
+                tender_data["status"] = "PENDING"
+                if not tenders_collection.find_one({"title": tender_data.get("title")}):
+                    tenders_collection.insert_one(tender_data)
+                    run_full_tender_pipeline.delay()
+                    ai_msg_content = f"✅ I've processed that. New Tender '{tender_data.get('title')}' has been added and the pipeline is running."
+                else:
+                    ai_msg_content = f"⚠️ That tender '{tender_data.get('title')}' already exists in the database."
+        except Exception as e:
+            logger.error(f"Chat extraction error: {e}")
+            ai_msg_content = "I tried to add that tender but couldn't parse the details. Could you check the format?"
+
+    # 5. Update DB
+    new_messages = [
+        {"role": "user", "content": user_query, "timestamp": datetime.now()},
+        {"role": "ai", "content": ai_msg_content, "data": extracted_data, "timestamp": datetime.now()}
+    ]
+    
+    chat_sessions_collection.update_one(
+        {"_id": ObjectId(session_id)},
+        {
+            "$push": {"messages": {"$each": new_messages}},
+            "$set": {"updated_at": datetime.now()}
+        }
+    )
+    
+    return {"answer": ai_msg_content, "data": extracted_data}
+
 # --- Chat API ---
 class ChatQuery(BaseModel):
     query: str
