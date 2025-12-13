@@ -64,6 +64,14 @@ def scheduled_scrape_job():
 # --- LIFESPAN MANAGER ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Check DB Connection
+    try:
+        from database.mongo import client
+        client.admin.command('ping')
+        logger.info("Startup: Connected to MongoDB successfully.")
+    except Exception as e:
+        logger.error(f"Startup: Failed to connect to MongoDB: {e}")
+        
     # Start Scheduler
     scheduler = BackgroundScheduler()
     
@@ -529,6 +537,64 @@ def optimize_bid(tender_id: str):
         
     except Exception as e:
         logger.error(f"Error in bid optimization: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.post("/api/tenders/{tender_id}/draft-proposal")
+def draft_proposal(tender_id: str):
+    """
+    Generates a professional proposal draft using OpenAI.
+    """
+    if tenders_collection is None:
+        return {"error": "Database not connected"}
+        
+    try:
+        tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        if not tender:
+            return {"error": "Tender not found"}
+            
+        # Gather context
+        bid_opt = tender.get("bid_optimization", {})
+        comp_analysis = tender.get("competitor_analysis", {})
+        
+        context_data = {
+            "title": tender.get("title"),
+            "client": tender.get("client_name", "The Client"), # Assuming client_name might be there or generic
+            "summary": tender.get("summary"),
+            "our_offer_price": bid_opt.get("recommended_bid_price"),
+            "our_strategy": bid_opt.get("strategy_rationale"),
+            "key_risks_mitigated": comp_analysis.get("risks", [])[:2] # Mention how we handle top risks
+        }
+        
+        import json
+        prompt = f"""
+        You are a Proposal Manager. Write a highly persuasive Executive Summary (Cover Letter) for this tender bid.
+        
+        BID CONTEXT:
+        {json.dumps(context_data, default=str)}
+        
+        REQUIREMENTS:
+        1. Keep it professional, confident, and winning.
+        2. Highlight our competitive pricing (if optimized) and strategic value.
+        3. Address key risks implicitly to show competence.
+        4. Structure: Salutation, Value Proposition, Technical/Commercial Edge, Closing.
+        
+        OUTPUT:
+        Return ONLY the plaintext of the letter. No markdown formatting like **bold** unless necessary for the letter structure itself.
+        """
+        
+        from agents.llm_client import call_llm
+        proposal_text = call_llm(prompt)
+        
+        # Save to DB
+        tenders_collection.update_one(
+            {"_id": ObjectId(tender_id)},
+            {"$set": {"proposal_draft": proposal_text}}
+        )
+        
+        return {"status": "success", "data": {"proposal_text": proposal_text}}
+        
+    except Exception as e:
+        logger.error(f"Error in proposal drafting: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

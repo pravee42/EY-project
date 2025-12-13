@@ -146,14 +146,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") # Keep for reference or remove if strictly switching
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = "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"
 
 def analyze_tenders_with_ai(tenders: List[dict]) -> List[dict]:
     """
     Sends a list of tenders to OpenAI via REST API to classify them.
     """
     if not tenders or not OPENAI_API_KEY:
-        logger.warning("Skipping AI analysis: No tenders or OpenAI API Key missing.")
+        missing_item = "tenders" if not tenders else "OpenAI API Key"
+        logger.warning(f"Skipping AI analysis: No {missing_item} missing.")
         return tenders
     
     try:

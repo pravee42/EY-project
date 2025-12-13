@@ -39,6 +39,7 @@ interface Tender {
         strategy_rationale: string;
         likelihood_to_win_with_this_price: string;
     };
+    proposal_draft?: string;
 }
 
 interface CeleryTask {
@@ -260,6 +261,7 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
     // States
     const [analyzingComp, setAnalyzingComp] = useState(false);
     const [optimizingBid, setOptimizingBid] = useState(false);
+    const [drafting, setDrafting] = useState(false);
 
     const runCompetitorAnalysis = async () => {
         setAnalyzingComp(true);
@@ -282,6 +284,18 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
             console.error(e);
         } finally {
             setOptimizingBid(false);
+        }
+    };
+
+    const runDraftProposal = async () => {
+        setDrafting(true);
+        try {
+            await fetch(`${API_BASE}/api/tenders/${tender._id}/draft-proposal`, { method: "POST" });
+            onRefresh();
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setDrafting(false);
         }
     };
 
@@ -355,14 +369,11 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                                         </span>
                                     </div>
                                     <div className="flex justify-between items-center">
-                                        <span className="text-slate-600">Target Margin</span>
+                                        <span className="text-slate-600">Margin</span>
                                         <span className="font-bold text-emerald-600">
                                             {tender.bid_optimization.recommended_margin_percentage}%
                                         </span>
                                     </div>
-                                    <p className="text-[10px] text-slate-500 italic mt-1 leading-tight">
-                                        "{tender.bid_optimization.strategy_rationale.slice(0, 60)}..."
-                                    </p>
                                 </div>
                             ) : (
                                 <button
@@ -370,12 +381,19 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                                     disabled={optimizingBid || !tender.competitor_analysis}
                                     className="text-xs text-indigo-600 font-medium flex items-center gap-1 hover:underline disabled:opacity-50"
                                 >
-                                    {optimizingBid ? <RefreshCw className="h-3 w-3 animate-spin" /> : "Generat Strategy"}
+                                    {optimizingBid ? <RefreshCw className="h-3 w-3 animate-spin" /> : "Generate Strategy"}
                                     {!tender.competitor_analysis && <span className="text-[9px] text-gray-400 ml-1">(Requires Comp. Analysis)</span>}
                                 </button>
                             )}
                         </div>
                     </div>
+
+                    {/* Proposal Action Line */}
+                    {tender.bid_optimization && (
+                        <div className="mt-4 flex items-center gap-2">
+                            <ProposalDialog tender={tender} onDraft={runDraftProposal} drafting={drafting} />
+                        </div>
+                    )}
 
                 </div>
 
@@ -425,6 +443,65 @@ function TenderCard({ tender, onRefresh }: { tender: Tender, onRefresh: () => vo
                 </div>
             )}
         </motion.div>
+    )
+}
+
+// --- Proposal Dialog ---
+function ProposalDialog({ tender, onDraft, drafting }: { tender: Tender, onDraft: () => void, drafting: boolean }) {
+    return (
+        <Dialog.Root>
+            <Dialog.Trigger asChild>
+                <button className="text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg flex items-center gap-2 transition-all shadow-sm shadow-indigo-200">
+                    <FileText className="h-3 w-3" />
+                    {tender.proposal_draft ? "View Proposal Draft" : "Draft Proposal"}
+                </button>
+            </Dialog.Trigger>
+            <Dialog.Portal>
+                <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 animate-in fade-in" />
+                <Dialog.Content className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-xl shadow-2xl w-[600px] h-[80vh] flex flex-col z-50 animate-in zoom-in-95">
+                    <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 rounded-t-xl">
+                        <div>
+                            <Dialog.Title className="text-lg font-bold text-slate-900">Proposal Draft</Dialog.Title>
+                            <Dialog.Description className="text-xs text-slate-500">
+                                AI-generated executive summary based on bid strategy.
+                            </Dialog.Description>
+                        </div>
+                        <Dialog.Close className="text-gray-400 hover:text-gray-600"><X className="h-5 w-5" /></Dialog.Close>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-8 bg-white font-serif text-sm leading-7 text-slate-700 whitespace-pre-wrap">
+                        {tender.proposal_draft ? (
+                            tender.proposal_draft
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-center">
+                                <div className="p-4 bg-indigo-50 rounded-full mb-4">
+                                    <FileText className="h-8 w-8 text-indigo-500" />
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900 mb-1">Ready to Draft</h3>
+                                <p className="text-xs text-slate-500 mb-6 max-w-xs">
+                                    Generate a professional cover letter incorporating your calculated bid price and competitive advantages.
+                                </p>
+                                <button
+                                    onClick={onDraft}
+                                    disabled={drafting}
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-all disabled:opacity-70"
+                                >
+                                    {drafting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                                    {drafting ? "Writing..." : "Generate Proposal Now"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {tender.proposal_draft && (
+                        <div className="p-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-2 rounded-b-xl">
+                            <button className="text-xs font-bold text-slate-600 px-4 py-2 hover:bg-gray-200 rounded-lg">Copy Text</button>
+                            <button className="text-xs font-bold text-white bg-indigo-600 px-4 py-2 hover:bg-indigo-700 rounded-lg">Download PDF</button>
+                        </div>
+                    )}
+                </Dialog.Content>
+            </Dialog.Portal>
+        </Dialog.Root>
     )
 }
 

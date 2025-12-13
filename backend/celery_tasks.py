@@ -46,9 +46,29 @@ def send_email(to_email, subject, html_content):
     except Exception as e:
         logger.error(f"Failed to send email: {e}")
 
+# --- Re-connect to Mongo for this worker process ---
+# This is required because the module-level 'client' from mongo.py 
+# might not be reliable after the fork/exec transition to Celery worker.
+from pymongo import MongoClient
+MONGO_URI_LOCAL = os.getenv("MONGO_URI", "mongodb+srv://admin:admin@cluster0.f1ccp3c.mongodb.net/")
+
+def get_db_collections():
+    try:
+        # Create a fresh local connection for this thread/process
+        _client = MongoClient(MONGO_URI_LOCAL)
+        _db = _client["rfp_yukti"]
+        return _db['tenders'], _db['celery_tasks']
+    except Exception as e:
+        logger.error(f"Failed to connect to local Mongo: {e}")
+        return None, None
+
 def update_task_status(task_id, stage, status, details=None):
     """Helper to update task status in MongoDB"""
-    if celery_tasks_collection is None:
+    # Get fresh collection reference
+    _, _tasks_col = get_db_collections()
+    
+    if _tasks_col is None:
+        logger.error("Could not get celery_tasks_collection for update.")
         return
         
     update_data = {
@@ -59,11 +79,14 @@ def update_task_status(task_id, stage, status, details=None):
     if details:
         update_data["details"] = details
         
-    celery_tasks_collection.update_one(
-        {"task_id": task_id},
-        {"$set": update_data},
-        upsert=True
-    )
+    try:
+        _tasks_col.update_one(
+            {"task_id": task_id},
+            {"$set": update_data},
+            upsert=True
+        )
+    except Exception as e:
+        logger.error(f"Failed to write to MongoDB: {e}")
 
 @celery_app.task(name="run_full_tender_pipeline", bind=True)
 def run_full_tender_pipeline(self):
@@ -71,15 +94,19 @@ def run_full_tender_pipeline(self):
     logger.info(f"Starting full tender pipeline task {task_id}...")
     
     # Initialize task record
-    if celery_tasks_collection is not None:
-        celery_tasks_collection.insert_one({
-            "task_id": task_id,
-            "status": "RUNNING",
-            "current_stage": "INIT",
-            "created_at": datetime.now(),
-            "updated_at": datetime.now(),
-            "details": {}
-        })
+    _, _tasks_col = get_db_collections()
+    if _tasks_col is not None:
+        try:
+            _tasks_col.insert_one({
+                "task_id": task_id,
+                "status": "RUNNING",
+                "current_stage": "INIT",
+                "created_at": datetime.now(),
+                "updated_at": datetime.now(),
+                "details": {}
+            })
+        except Exception as e:
+            logger.error(f"Failed to insert init task record: {e}")
 
     try:
         # 1. Scrape
@@ -87,7 +114,22 @@ def run_full_tender_pipeline(self):
         logger.info("Step 1: Scraping...")
         scraped_tenders = scrape_all_sources()
         logger.info(f"Scraped {len(scraped_tenders)} tenders.")
-        update_task_status(task_id, "SCRAPING", "COMPLETED", {"scraped_count": len(scraped_tenders)})
+        
+        # Save Scraped Tenders to DB (Critical Step missed before)
+        _tenders_col, _ = get_db_collections()
+        new_count = 0
+        if _tenders_col is not None:
+            for tender_data in scraped_tenders:
+                try:
+                    # Check duplicate by title
+                    if not _tenders_col.find_one({"title": tender_data["title"]}):
+                        _tenders_col.insert_one(tender_data)
+                        new_count += 1
+                except Exception as insert_error:
+                    logger.error(f"Error inserting tender in Celery task: {insert_error}")
+        
+        logger.info(f"Celery Scrape finished. Found {len(scraped_tenders)}, Inserted {new_count} new.")
+        update_task_status(task_id, "SCRAPING", "COMPLETED", {"scraped_count": len(scraped_tenders), "inserted_count": new_count})
         
         # 2. Sales Agent
         update_task_status(task_id, "SALES_AGENT", "RUNNING")
@@ -118,21 +160,24 @@ def run_full_tender_pipeline(self):
         # 6. Send Emails
         update_task_status(task_id, "EMAIL_NOTIFICATION", "RUNNING")
         if master_ids:
+            _tenders_col, _ = get_db_collections() # Get fresh tender col
+            
             for tender_id in master_ids:
                 try:
-                    tender = tenders_collection.find_one({"_id": ObjectId(tender_id)})
-                    if tender:
-                        final_report = tender.get("final_report_json", {})
-                        
-                        from jinja2 import Environment, FileSystemLoader
-                        template_dir = os.path.join(os.path.dirname(__file__), "templates")
-                        env = Environment(loader=FileSystemLoader(template_dir))
-                        template = env.get_template("report_template.html")
-                        
-                        html_content = template.render(**final_report)
-                        
-                        subject = f"New Tender Report Processed: {final_report.get('tender_title', 'Untitled')}"
-                        send_email("praveen@abipravi.in", subject, html_content)
+                    if _tenders_col is not None:
+                        tender = _tenders_col.find_one({"_id": ObjectId(tender_id)})
+                        if tender:
+                            final_report = tender.get("final_report_json", {})
+                            
+                            from jinja2 import Environment, FileSystemLoader
+                            template_dir = os.path.join(os.path.dirname(__file__), "templates")
+                            env = Environment(loader=FileSystemLoader(template_dir))
+                            template = env.get_template("report_template.html")
+                            
+                            html_content = template.render(**final_report)
+                            
+                            subject = f"New Tender Report Processed: {final_report.get('tender_title', 'Untitled')}"
+                            send_email("praveen@abipravi.in", subject, html_content)
                         
                 except Exception as e:
                     logger.error(f"Error sending email for tender {tender_id}: {e}")

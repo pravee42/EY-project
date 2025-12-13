@@ -1,4 +1,8 @@
 import os
+# Fix for macOS fork safety crash
+os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+# Disable proxy config to prevent specific macOS crashes with Celery/Billiard network calls
+os.environ["NO_PROXY"] = "*"
 from celery import Celery
 
 # Ensure directories exist
@@ -19,6 +23,7 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
+    worker_pool='solo', # CRITICAL: Forces single-threaded execution to bypass macOS forking crashes entirely
     broker_transport_options={
         'data_folder_in': BROKER_OUT,
         'data_folder_out': BROKER_OUT,

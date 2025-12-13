@@ -8,10 +8,9 @@ load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:admin@cluster0.f1ccp3c.mongodb.net/")
 
 try:
-    client = MongoClient(MONGO_URI)
-    # Ping the database to check connection
-    client.admin.command('ping')
-    print("Connected to MongoDB successfully.")
+    client = MongoClient(MONGO_URI, connect=False, uuidRepresentation="standard")
+    # client.admin.command('ping') -> Removed to allow lazy connection for Celery fork safety
+    # print("Connected to MongoDB successfully.")
 
     db = client["rfp_yukti"]
     tenders_collection = db['tenders']

@@ -6,7 +6,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
 
 def call_llm(prompt: str) -> Optional[str]:
     """
