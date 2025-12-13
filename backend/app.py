@@ -600,3 +600,128 @@ def draft_proposal(tender_id: str):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+# --- Chat API ---
+class ChatQuery(BaseModel):
+    query: str
+
+from agents.llm_client import call_llm
+import json
+import re
+
+@app.post("/api/chat/global")
+def global_chat_interface(request: ChatQuery):
+    """
+    Bloomberg-style terminal chat interface.
+    Handles:
+    1. SEARCH/Please: Questions about existing tenders (RAG).
+    2. ADD/Process: Manual entry of new tenders.
+    """
+    query = request.query
+    
+    # 1. Intent Classification
+    intent_prompt = f"""
+    Analyze the user's intent in this query: "{query}"
+    
+    Classify into one of two categories:
+    - ADD: User is providing details of a new tender to add/process (e.g. "Add a tender...", "New RFP from...").
+    - SEARCH: User is asking questions about existing data, status, generic queries, or market intel.
+    
+    Reply ONLY with the word ADD or SEARCH.
+    """
+    intent = call_llm(intent_prompt)
+    if not intent:
+        intent = "SEARCH"
+    else:
+        intent = intent.strip().upper()
+        
+    logger.info(f"Chat Intent: {intent}")
+        
+    if "ADD" in intent:
+        # Extract Tender Details
+        extract_prompt = f"""
+        Extract the tender details from this text into a VALID JSON object.
+        Text: "{query}"
+        
+        Fields required: 
+        - title (generate a concise title if not explicit)
+        - client_name (infer if possible, else "Unknown")
+        - summary (the full context provided)
+        - total_tender_price (numeric, infer from text like "50Cr", "10 Lakhs", "500000". If missing, use 0)
+        - deadline (YYYY-MM-DD format. Infer from "next month", "in 2 weeks", etc. If impossible, use Future Date)
+        
+        Output ONLY the JSON object. No markdown.
+        """
+        json_str = call_llm(extract_prompt)
+        
+        try:
+            # Clean markdown if present
+            if "```json" in json_str:
+                json_str = json_str.split("```json")[1].split("```")[0]
+            elif "```" in json_str:
+                json_str = json_str.split("```")[1].split("```")[0]
+                
+            tender_data = json.loads(json_str.strip())
+            
+            # Add defaults
+            tender_data["scraped_at"] = datetime.now()
+            tender_data["source"] = "MANUAL_CHAT_ENTRY"
+            tender_data["status"] = "PENDING"
+            
+            # Insert to DB
+            if tenders_collection is not None:
+                # Check dupe
+                if not tenders_collection.find_one({"title": tender_data.get("title")}):
+                    tenders_collection.insert_one(tender_data)
+                    
+                    # Trigger Pipeline
+                    run_full_tender_pipeline.delay()
+                    
+                    return {
+                        "answer": f"✅ New Tender '{tender_data.get('title')}' added to the database.\n\nRunning background pipeline (Analysis -> Strategy -> Pricing)...\n\nCheck the dashboard shortly.",
+                        "intent": "ADD",
+                        "data": tender_data
+                    }
+                else:
+                    return {
+                        "answer": f"⚠️ A tender with the title '{tender_data.get('title')}' already exists.",
+                        "intent": "ADD_DUPLICATE"
+                    }
+            else:
+                return {"answer": "Database error.", "intent": "ERROR"}
+                
+        except Exception as e:
+            logger.error(f"Extraction Failed: {e}")
+            return {"answer": "I understood you want to add a tender, but I couldn't extract the details. Please try providing: Title, Client, Value, and Deadline.", "intent": "ADD_FAILED"}
+            
+    else:
+        # RAG / Search Algo
+        # 1. Fetch relevant context (Naively fetch last 20 for now - Hackathon MVP)
+        if tenders_collection is not None:
+            recent_tenders = list(tenders_collection.find({}, {
+                "title": 1, "client_name": 1, "total_tender_price": 1, 
+                "approval_status": 1, "competitor_analysis.win_probability": 1, 
+                "bid_optimization.recommended_bid_price": 1
+            }).sort("scraped_at", -1).limit(20))
+            
+            context_str = json.dumps(recent_tenders, default=str)
+        else:
+            context_str = "No database connection."
+            
+        # 2. Answer Query
+        rag_prompt = f"""
+        You are 'RFP Yukti Terminal', an advanced procurement AI. 
+        
+        Context (Recent Tenders):
+        {context_str}
+        
+        User Query: "{query}"
+        
+        Answer the user's question based on the context. 
+        - Be professional, concise, and data-driven.
+        - If they ask for high-value tenders, filter by price.
+        - If they ask for win probability, use the competitor analysis data.
+        - If the info isn't in the context, just say you don't have that data currently.
+        """
+        
+        answer = call_llm(rag_prompt)
+        return {"answer": answer, "intent": "SEARCH"}

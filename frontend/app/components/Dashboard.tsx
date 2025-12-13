@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
+import ReactMarkdown from 'react-markdown';
+
 
 const API_BASE = "http://127.0.0.1:8000";
 
@@ -51,11 +53,13 @@ interface CeleryTask {
 }
 
 // --- Dashboard Component ---
+// --- Dashboard Component ---
 export default function Dashboard() {
     const [tenders, setTenders] = useState<Tender[]>([]);
     const [tasks, setTasks] = useState<CeleryTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [activeTab, setActiveTab] = useState<"dashboard" | "chat">("dashboard");
 
     // Filters
     const [search, setSearch] = useState("");
@@ -103,63 +107,69 @@ export default function Dashboard() {
         <div className="flex h-screen bg-gray-50 font-sans text-slate-900">
 
             {/* Sidebar Navigation */}
-            <Sidebar tasks={tasks} />
+            <Sidebar tasks={tasks} activeTab={activeTab} onTabChange={setActiveTab} />
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden">
 
-                {/* Top Header */}
-                <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-10">
-                    <div className="flex items-center gap-4">
-                        <Search className="h-5 w-5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="Search tenders..."
-                            className="bg-transparent border-none outline-none text-sm w-64 text-slate-700 placeholder-gray-400"
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="flex items-center gap-4">
-                        <FilterTabs current={statusFilter} onChange={setStatusFilter} />
-                        <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-bold text-xs ring-2 ring-purple-100">
-                            PK
-                        </div>
-                    </div>
-                </header>
-
-                {/* Scrollable Canvas */}
-                <main className="flex-1 overflow-y-auto p-8">
-                    <div className="max-w-7xl mx-auto">
-
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h1 className="text-2xl font-bold text-slate-900">Procurement Overview</h1>
-                                <p className="text-slate-500 text-sm">Managing {tenders.length} active opportunities</p>
+                {activeTab === "dashboard" ? (
+                    <>
+                        {/* Top Header */}
+                        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-10">
+                            <div className="flex items-center gap-4">
+                                <Search className="h-5 w-5 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="Search tenders..."
+                                    className="bg-transparent border-none outline-none text-sm w-64 text-slate-700 placeholder-gray-400"
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                />
                             </div>
-                            <button
-                                onClick={() => fetch(`${API_BASE}/api/celery/start-process`, { method: "POST" })}
-                                className="bg-primary hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
-                            >
-                                <RefreshCw className="h-4 w-4" />
-                                Run Pipeline
-                            </button>
-                        </div>
 
-                        <div className="grid grid-cols-1 gap-6">
-                            {filteredTenders.map((t) => (
-                                <TenderCard key={t._id} tender={t} onRefresh={() => setRefreshKey(k => k + 1)} />
-                            ))}
-                            {filteredTenders.length === 0 && (
-                                <div className="text-center py-20 text-gray-400 bg-white rounded-xl border border-dashed">
-                                    No tenders match your filters.
+                            <div className="flex items-center gap-4">
+                                <FilterTabs current={statusFilter} onChange={setStatusFilter} />
+                                <div className="h-8 w-8 bg-purple-100 rounded-full flex items-center justify-center text-purple-700 font-bold text-xs ring-2 ring-purple-100">
+                                    PK
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        </header>
 
-                    </div>
-                </main>
+                        {/* Scrollable Canvas */}
+                        <main className="flex-1 overflow-y-auto p-8">
+                            <div className="max-w-7xl mx-auto">
+
+                                <div className="flex items-center justify-between mb-8">
+                                    <div>
+                                        <h1 className="text-2xl font-bold text-slate-900">Procurement Overview</h1>
+                                        <p className="text-slate-500 text-sm">Managing {tenders.length} active opportunities</p>
+                                    </div>
+                                    <button
+                                        onClick={() => fetch(`${API_BASE}/api/celery/start-process`, { method: "POST" })}
+                                        className="bg-primary hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                                    >
+                                        <RefreshCw className="h-4 w-4" />
+                                        Run Pipeline
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-6">
+                                    {filteredTenders.map((t) => (
+                                        <TenderCard key={t._id} tender={t} onRefresh={() => setRefreshKey(k => k + 1)} />
+                                    ))}
+                                    {filteredTenders.length === 0 && (
+                                        <div className="text-center py-20 text-gray-400 bg-white rounded-xl border border-dashed">
+                                            No tenders match your filters.
+                                        </div>
+                                    )}
+                                </div>
+
+                            </div>
+                        </main>
+                    </>
+                ) : (
+                    <GlobalChat />
+                )}
             </div>
 
         </div>
@@ -168,7 +178,7 @@ export default function Dashboard() {
 
 // --- Sub Components ---
 
-function Sidebar({ tasks }: { tasks: CeleryTask[] }) {
+function Sidebar({ tasks, activeTab, onTabChange }: { tasks: CeleryTask[], activeTab: string, onTabChange: (t: "dashboard" | "chat") => void }) {
     return (
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-20">
             <div className="p-6 border-b border-gray-100">
@@ -178,7 +188,29 @@ function Sidebar({ tasks }: { tasks: CeleryTask[] }) {
                 </h1>
             </div>
 
-            <div className="p-4 flex-1 overflow-y-auto">
+            <div className="p-4 space-y-1">
+                <button
+                    onClick={() => onTabChange("dashboard")}
+                    className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
+                        activeTab === "dashboard" ? "bg-indigo-50 text-indigo-700 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                >
+                    <LayoutDashboard className="h-4 w-4" />
+                    Dashboard
+                </button>
+                <button
+                    onClick={() => onTabChange("chat")}
+                    className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
+                        activeTab === "chat" ? "bg-indigo-50 text-indigo-700 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                >
+                    <MessageSquare className="h-4 w-4" />
+                    Global Intelligence
+                    <span className="ml-auto text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold">New</span>
+                </button>
+            </div>
+
+            <div className="p-4 flex-1 overflow-y-auto border-t border-gray-100">
                 <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4 px-2">Live Tasks</h3>
                 <div className="space-y-3">
                     {tasks.length === 0 ? (
@@ -596,8 +628,17 @@ function ChatBubble({ tenderId, title }: { tenderId?: string, title: string }) {
                             </div>
                         )}
                         {messages.map((m, i) => (
-                            <div key={i} className={cn("text-xs p-2 rounded-lg max-w-[85%]", m.role === 'user' ? "bg-indigo-600 text-white ml-auto" : "bg-white border border-gray-200 text-slate-700 mr-auto")}>
-                                {m.text}
+                            <div key={i} className={cn("text-xs p-2 rounded-lg max-w-[85%]", m.role === 'user' ? "bg-indigo-600 text-white ml-auto" : "bg-white border border-gray-200 text-slate-700 mr-auto prose prose-indigo max-w-none prose-sm")}>
+                                <ReactMarkdown
+                                    components={{
+                                        ul: ({ node, ...props }) => <ul className="list-disc pl-4" {...props} />,
+                                        ol: ({ node, ...props }) => <ol className="list-decimal pl-4" {...props} />,
+                                        li: ({ node, ...props }) => <li className="mb-0.5" {...props} />,
+                                        p: ({ node, ...props }) => <div className="mb-1 last:mb-0" {...props} />
+                                    }}
+                                >
+                                    {m.text}
+                                </ReactMarkdown>
                             </div>
                         ))}
                         {loading && (
@@ -689,5 +730,165 @@ function RejectionDialog({ tenderId, onRefresh }: { tenderId?: string, onRefresh
                 </Dialog.Content>
             </Dialog.Portal>
         </Dialog.Root>
+    )
+}
+// --- Global Chat Component (Bloomberg Terminal Style) ---
+// --- Global Chat Component (Themed) ---
+function GlobalChat() {
+    const [messages, setMessages] = useState<{ role: 'user' | 'ai' | 'system', text: string, data?: any }[]>([
+        { role: 'system', text: "Welcome to RFP Yukti Intelligence.\nI can answer questions about your tenders or help you add new ones." }
+    ]);
+    const [input, setInput] = useState("");
+    const [loading, setLoading] = useState(false);
+    const bottomRef = useRef<HTMLDivElement>(null);
+
+    const handleSend = async () => {
+        if (!input.trim()) return;
+
+        const userQuery = input;
+        setInput("");
+        setMessages(prev => [...prev, { role: 'user', text: userQuery }]);
+        setLoading(true);
+
+        try {
+            const res = await fetch(`${API_BASE}/api/chat/global`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ query: userQuery })
+            });
+            const data = await res.json();
+
+            setMessages(prev => [...prev, {
+                role: 'ai',
+                text: data.answer,
+                data: data.data
+            }]);
+
+        } catch (e) {
+            setMessages(prev => [...prev, { role: 'system', text: "Connection Error: Backend unreachable." }]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
+    return (
+        <div className="flex-1 flex flex-col bg-gray-50 font-sans h-full overflow-hidden relative">
+
+            {/* Header */}
+            <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center gap-3 shadow-sm z-10">
+                <div className="h-10 w-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                    <MessageSquare className="h-5 w-5" />
+                </div>
+                <div>
+                    <h2 className="text-lg font-bold text-slate-900">Global Intelligence</h2>
+                    <p className="text-xs text-slate-500">Ask about tenders, market insights, or add new opportunities.</p>
+                </div>
+            </div>
+
+            {/* Chat Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {messages.map((m, i) => (
+                    <div key={i} className={cn("flex flex-col max-w-3xl", m.role === 'user' ? "ml-auto items-end" : m.role === 'system' ? "mx-auto items-center" : "mr-auto items-start")}>
+
+                        {m.role !== 'system' && (
+                            <span className="text-[10px] text-gray-400 mb-1 px-1">
+                                {m.role === 'user' ? 'You' : 'Yukti AI'}
+                            </span>
+                        )}
+
+                        {m.role === 'system' ? (
+                            <div className="bg-gray-100 text-gray-500 text-xs px-3 py-1.5 rounded-full mb-4">
+                                {m.text}
+                            </div>
+                        ) : (
+                            <div className={cn(
+                                "p-4 rounded-2xl text-sm leading-relaxed shadow-sm",
+                                m.role === 'user' ? "bg-indigo-600 text-white rounded-tr-none" :
+                                    "bg-white border border-gray-100 text-slate-700 rounded-tl-none prose prose-indigo max-w-none prose-sm"
+                            )}>
+                                {/* Markdown Rendering */}
+                                <ReactMarkdown
+                                    components={{
+                                        // Customize lists to look native
+                                        ul: ({ node, ...props }) => <ul className="list-disc pl-4 my-2" {...props} />,
+                                        ol: ({ node, ...props }) => <ol className="list-decimal pl-4 my-2" {...props} />,
+                                        li: ({ node, ...props }) => <li className="mb-1" {...props} />,
+                                        strong: ({ node, ...props }) => <span className="font-bold" {...props} />,
+                                        p: ({ node, ...props }) => <div className="mb-2 last:mb-0" {...props} />
+                                    }}
+                                >
+                                    {m.text}
+                                </ReactMarkdown>
+
+                                {/* Structured Data Display */}
+                                {m.data && (
+                                    <div className="mt-3 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden">
+                                        <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
+                                            <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                            <span className="text-xs font-bold text-slate-600 uppercase">Captured Data</span>
+                                        </div>
+                                        <div className="p-3 text-xs space-y-1.5">
+                                            {Object.entries(m.data).map(([k, v]) => (
+                                                <div key={k} className="grid grid-cols-3 gap-2">
+                                                    <span className="font-semibold text-slate-500 capitalize">{k.replace(/_/g, " ")}:</span>
+                                                    <span className="col-span-2 text-slate-800 truncate" title={String(v)}>{String(v)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                ))}
+
+                {loading && (
+                    <div className="flex items-center gap-2 text-indigo-400 ml-4">
+                        <div className="flex gap-1">
+                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce" />
+                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-75" />
+                            <span className="h-2 w-2 bg-indigo-400 rounded-full animate-bounce delay-150" />
+                        </div>
+                        <span className="text-xs font-medium">Processing...</span>
+                    </div>
+                )}
+                <div ref={bottomRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="p-6 bg-white border-t border-gray-100">
+                <div className="max-w-4xl mx-auto relative flex gap-3">
+                    <div className="flex-1 relative">
+                        <input
+                            className="w-full bg-gray-50 border border-gray-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 text-slate-800 text-sm px-4 py-3.5 rounded-xl outline-none transition-all placeholder-gray-400"
+                            placeholder="Type a command (e.g., 'List high value tenders' or 'Add new tender...')"
+                            value={input}
+                            onChange={e => setInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleSend()}
+                            autoFocus
+                        />
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+                            {/* Placeholder for voice/attachment icons if needed */}
+                        </div>
+                    </div>
+                    <button
+                        onClick={handleSend}
+                        disabled={!input.trim() || loading}
+                        className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-xl transition-all shadow-lg shadow-indigo-200"
+                    >
+                        <Send className="h-5 w-5" />
+                    </button>
+                </div>
+                <div className="text-center mt-2">
+                    <p className="text-[10px] text-gray-400">
+                        AI can make mistakes. Please verify important tender details.
+                    </p>
+                </div>
+            </div>
+        </div>
     )
 }

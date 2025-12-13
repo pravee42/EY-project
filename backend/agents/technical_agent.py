@@ -56,6 +56,22 @@ def parse_technical_summary(text: str) -> List[dict]:
             items = json.loads(json_part)
             if isinstance(items, list):
                 return items
+        if "ITEMS:" in text:
+            json_part = text.split("ITEMS:")[1].strip()
+            # It might be wrapped in ```json ... ```
+            if json_part.startswith("```"):
+                # Remove first line (```json) and last line (```)
+                lines = json_part.splitlines()
+                print(lines)
+                if lines[0].startswith("```"):
+                    lines = lines[1:]
+                lines = [x.strip() for x in lines]
+                lines = lines[:lines.index('```')]
+                json_part = "\n".join(lines)
+            # Attempt to parse
+            items = json.loads(json_part)
+            if isinstance(items, list):
+                return items
     except Exception as e:
         logger.error(f"Failed to parse technical summary JSON: {e}")
     return []
@@ -183,6 +199,7 @@ def process_tenders_via_technical_agent(limit=20) -> List[str]:
             # 1. Parse Line Items
             tech_text = tender.get("technical_summary_text", "")
             scope_of_supply = parse_technical_summary(tech_text)
+            
             
             if not scope_of_supply:
                 logger.warning(f"No line items found for tender {tender_id}")
