@@ -741,11 +741,27 @@ def send_chat_message(session_id: str, payload: ExtendedChatPayload):
     USER'S NEW MESSAGE:
     "{user_query}"
     
+    AVAILABLE TOOLS/ACTIONS:
+    You can control the system using these specific commands. 
+    To use a tool, your response must start with "TOOL_CALL: <ToolName> <Args>".
+    
+    1. APPROVE_TENDER
+       - Syntax: TOOL_CALL: APPROVE_TENDER <Tender_ID or Exact_Title>
+       - Use: When user explicitly asks to approve a tender.
+       
+    2. REJECT_TENDER
+       - Syntax: TOOL_CALL: REJECT_TENDER <Tender_ID or Exact_Title> | <Reason>
+       - Use: When user asks to reject. Reason is optional but recommended.
+       
+    3. RUN_ANALYSIS
+       - Syntax: TOOL_CALL: RUN_ANALYSIS <Tender_ID or Exact_Title>
+       - Use: When user wants to run/re-run competitor analysis or bid optimization.
+       
     INSTRUCTIONS:
-    1. Answer the user's question using the System Context or Chat History.
-    2. If the user wants to ADD a tender, extract JSON details as before.
-    3. If they ask a followup (e.g. "What about the second one?"), use Chat History to resolve references.
-    4. Be concise and professional. Use Markdown for formatting.
+    1. If the user asks to perform an action listed above, USE THE TOOL. Do successfully extract the specific Tender ID or Title from context.
+    2. If NO action is needed, answer the user's question using the System Context or Chat History.
+    3. If the user wants to ADD a tender, extract JSON details as before ("ADD_TENDER_JSON:").
+    4. Be concise and professional.
     
     SPECIAL HANDLING:
     - If user provides tender details to add, output valid JSON starting with "ADD_TENDER_JSON:".
@@ -756,8 +772,61 @@ def send_chat_message(session_id: str, payload: ExtendedChatPayload):
     # 4. Process Response (Check for ADD intent via special prefix)
     ai_msg_content = response_text
     extracted_data = None
+    action_result = None
     
-    if "ADD_TENDER_JSON:" in response_text:
+    # --- Tool Execution Logic ---
+    if "TOOL_CALL:" in response_text:
+        try:
+            tool_command = response_text.split("TOOL_CALL:")[1].strip()
+            tool_parts = tool_command.split(" ", 1)
+            tool_name = tool_parts[0]
+            tool_args = tool_parts[1] if len(tool_parts) > 1 else ""
+            
+            # Helper to find tender by ID or Title
+            def find_tender(identifier):
+                if ObjectId.is_valid(identifier):
+                    return tenders_collection.find_one({"_id": ObjectId(identifier)})
+                # Fuzzy/Exact Title Match
+                return tenders_collection.find_one({"title": {"$regex": identifier, "$options": "i"}})
+
+            if tool_name == "APPROVE_TENDER":
+                tender = find_tender(tool_args.strip())
+                if tender:
+                    tenders_collection.update_one({"_id": tender["_id"]}, {"$set": {"approval_status": "APPROVED", "updated_at": datetime.now()}})
+                    action_result = {"status": "success", "action": "approve", "tender": tender["title"]}
+                    ai_msg_content = f"✅ Approved tender: **{tender['title']}**."
+                else:
+                    ai_msg_content = f"❌ Could not find tender: '{tool_args}' to approve."
+
+            elif tool_name == "REJECT_TENDER":
+                args_split = tool_args.split("|")
+                identifier = args_split[0].strip()
+                reason = args_split[1].strip() if len(args_split) > 1 else "Chat Rejection"
+                tender = find_tender(identifier)
+                if tender:
+                    tenders_collection.update_one({"_id": tender["_id"]}, {"$set": {"approval_status": "REJECTED", "rejection_reason": reason, "updated_at": datetime.now()}})
+                    action_result = {"status": "success", "action": "reject", "tender": tender["title"]}
+                    ai_msg_content = f"🚫 Rejected tender: **{tender['title']}** (Reason: {reason})."
+                else:
+                    ai_msg_content = f"❌ Could not find tender: '{identifier}' to reject."
+
+            elif tool_name == "RUN_ANALYSIS":
+                tender = find_tender(tool_args.strip())
+                if tender:
+                    # Trigger specific analysis pipeline
+                    from celery_tasks import reprocess_single_tender
+                    task = reprocess_single_tender.delay(str(tender["_id"]))
+                    
+                    action_result = {"status": "success", "action": "analysis", "tender": tender["title"], "task_id": str(task.id)}
+                    ai_msg_content = f"⚙️ Started targeted analysis for: **{tender['title']}**.\n\nPipeline ID: `{task.id}`"
+                else:
+                    ai_msg_content = f"❌ Could not find tender: '{tool_args}' to analyze."
+                    
+        except Exception as e:
+            logger.error(f"Tool Execution Error: {e}")
+            ai_msg_content = "⚠️ I accept the command, but something went wrong executing it on the server."
+
+    elif "ADD_TENDER_JSON:" in response_text:
         try:
             json_part = response_text.split("ADD_TENDER_JSON:")[1].strip()
             if "```" in json_part: # Cleanup markdown
@@ -785,7 +854,7 @@ def send_chat_message(session_id: str, payload: ExtendedChatPayload):
     # 5. Update DB
     new_messages = [
         {"role": "user", "content": user_query, "timestamp": datetime.now()},
-        {"role": "ai", "content": ai_msg_content, "data": extracted_data, "timestamp": datetime.now()}
+        {"role": "ai", "content": ai_msg_content, "data": extracted_data or action_result, "timestamp": datetime.now()}
     ]
     
     update_fields = {
@@ -945,3 +1014,164 @@ def global_chat_interface(request: ChatQuery):
         
         answer = call_llm(rag_prompt)
         return {"answer": answer, "intent": "SEARCH"}
+
+# --- Analytics Endpoints ---
+@app.get("/api/analytics/dashboard")
+def get_analytics_dashboard():
+    try:
+        if tenders_collection is None:
+            return {"error": "Database not connected"}
+            
+        tenders = list(tenders_collection.find({}))
+        
+        # 1. Volume Trends (Group by Date)
+        trends = {}
+        for t in tenders:
+            if t.get("scraped_at"):
+                # Handle both datetime and string if existing data is mixed
+                ts = t["scraped_at"]
+                if isinstance(ts, str):
+                    try:
+                        ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                    except:
+                        continue
+                date_str = ts.strftime("%Y-%m-%d")
+                trends[date_str] = trends.get(date_str, 0) + 1
+        
+        volume_trends = [{"date": k, "count": v} for k, v in sorted(trends.items())]
+        
+        # 2. Category Frequency
+        categories = {}
+        for t in tenders:
+            cat = t.get("category", "Uncategorized")
+            categories[cat] = categories.get(cat, 0) + 1
+            
+        category_distribution = [{"name": k, "value": v} for k, v in categories.items()]
+        
+        # 3. Status Distribution (Wins/Losses Proxy)
+        status_counts = {"Approved": 0, "Rejected": 0, "Pending": 0}
+        for t in tenders:
+            status = t.get("approval_status", "PENDING")
+            if status == "APPROVED": status_counts["Approved"] += 1
+            elif status == "REJECTED": status_counts["Rejected"] += 1
+            else: status_counts["Pending"] += 1
+            
+        # 4. Win Likelihood Distribution (Histogram)
+        # Groups: 0-20, 20-40, 40-60, 60-80, 80-100
+        win_dist = {"0-20%": 0, "20-40%": 0, "40-60%": 0, "60-80%": 0, "80-100%": 0}
+        for t in tenders:
+            prob = 0
+            if t.get("competitor_analysis"):
+                prob = t["competitor_analysis"].get("win_probability", 0)
+            
+            if prob <= 20: win_dist["0-20%"] += 1
+            elif prob <= 40: win_dist["20-40%"] += 1
+            elif prob <= 60: win_dist["40-60%"] += 1
+            elif prob <= 80: win_dist["60-80%"] += 1
+            else: win_dist["80-100%"] += 1
+            
+        win_likelihood = [{"range": k, "count": v} for k, v in win_dist.items()]
+
+        # 5. AVG Time to Respond (Mock calculation for now as timestamps might be partial)
+        # In real scenario: avg(master_processed_at - scraped_at)
+        avg_response_time = 4.2 # hours (Mock)
+
+        return {
+            "volume_trends": volume_trends,
+            "category_distribution": category_distribution,
+            "status_distribution": [{"name": k, "value": v} for k,v in status_counts.items()],
+            "win_likelihood": win_likelihood,
+            "avg_response_time": avg_response_time,
+            "total_tenders": len(tenders)
+        }
+    except Exception as e:
+        logger.error(f"Analytics Error: {e}")
+        return {"error": str(e)}
+
+# --- Calendar Endpoints ---
+from datetime import timedelta
+from urllib.parse import quote
+
+@app.get("/api/calendar/events")
+def get_calendar_events():
+    """
+    Returns auto-generated calendar events for all tenders.
+    Events: Submission Deadline, Tech Review, Pricing Approval.
+    Includes 'google_link' for one-click add.
+    """
+    try:
+        if tenders_collection is None:
+            return []
+            
+        tenders = list(tenders_collection.find({}))
+        events = []
+        
+        for t in tenders:
+            # Determine Base Deadline
+            deadline = None
+            if t.get("submission_date"):
+                if isinstance(t["submission_date"], datetime):
+                    deadline = t["submission_date"]
+                elif isinstance(t["submission_date"], str):
+                    try:
+                        deadline = datetime.fromisoformat(t["submission_date"].replace("Z", ""))
+                    except: pass
+            
+            # Fallback Logic: Scraped + 14 Days
+            if not deadline:
+                scraped = t.get("scraped_at")
+                if isinstance(scraped, str):
+                    try: scraped = datetime.fromisoformat(scraped.replace("Z", ""))
+                    except: scraped = datetime.now()
+                elif not isinstance(scraped, datetime):
+                    scraped = datetime.now()
+                deadline = scraped + timedelta(days=14)
+            
+            # Calculate Milestones
+            tech_deadline = deadline - timedelta(days=5)
+            pricing_deadline = deadline - timedelta(days=2)
+            
+            # Helper to generate Google Calendar Link
+            def get_gcal_link(title, start_dt, details):
+                # Format: YYYYMMDDTHHMMSSZ
+                fmt = "%Y%m%dT%H%M%S"
+                start_str = start_dt.strftime(fmt)
+                end_str = (start_dt + timedelta(hours=1)).strftime(fmt)
+                base = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+                return f"{base}&text={quote(title)}&dates={start_str}/{end_str}&details={quote(details)}"
+
+            # 1. Submission Event
+            events.append({
+                "id": f"{t['_id']}_sub",
+                "tender_id": str(t["_id"]),
+                "title": f"📅 Deadline: {t.get('title', 'Tender')[:30]}...",
+                "start": deadline.isoformat(),
+                "type": "submission",
+                "google_link": get_gcal_link(f"DEADLINE: {t.get('title')}", deadline, f"Final submission for tender: {t.get('title')}")
+            })
+            
+            # 2. Technical Review
+            events.append({
+                "id": f"{t['_id']}_tech",
+                "tender_id": str(t["_id"]),
+                "title": f"🔧 Tech Review: {t.get('title', 'Tender')[:30]}...",
+                "start": tech_deadline.isoformat(),
+                "type": "technical",
+                "google_link": get_gcal_link(f"TECH REVIEW: {t.get('title')}", tech_deadline, "Internal technical spec review.")
+            })
+            
+            # 3. Pricing Approval
+            events.append({
+                "id": f"{t['_id']}_price",
+                "tender_id": str(t["_id"]),
+                "title": f"💰 Pricing Check: {t.get('title', 'Tender')[:30]}...",
+                "start": pricing_deadline.isoformat(),
+                "type": "pricing",
+                "google_link": get_gcal_link(f"PRICING APPROVAL: {t.get('title')}", pricing_deadline, "Finalize margin and approve bid price.")
+            })
+            
+        return events
+        
+    except Exception as e:
+        logger.error(f"Calendar Error: {e}")
+        return []

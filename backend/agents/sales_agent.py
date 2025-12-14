@@ -132,14 +132,20 @@ def build_sales_prompt_for_pricing(tender_doc: dict, pdf_text: str = "") -> Tupl
     
     return "", pricing_prompt
 
-def process_tenders_via_sales_agent(limit=20) -> List[str]:
+def process_tenders_via_sales_agent(limit=20, tender_id: str = None) -> List[str]:
     """
     Main logic to process tenders.
     Returns list of processed tender IDs.
     """
-    tenders = find_unprocessed_tenders(limit)
+    if tender_id:
+        from bson import ObjectId
+        t = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        tenders = [t] if t else []
+    else:
+        tenders = find_unprocessed_tenders(limit)
+        
     if not tenders:
-        logger.info("No unprocessed tenders found.")
+        logger.info("No tenders found to process.")
         return []
     
     processed_ids = []

@@ -202,3 +202,44 @@ def run_full_tender_pipeline(self):
         logger.error(f"Pipeline failed: {e}")
         update_task_status(task_id, "FAILED", "ERROR", {"error": str(e)})
         raise e
+
+@celery_app.task(name="reprocess_single_tender", bind=True)
+def reprocess_single_tender(self, tender_id: str):
+    task_id = self.request.id
+    logger.info(f"Starting targeted re-analysis for tender {tender_id} (Task {task_id})...")
+    
+    # Initialize Status
+    _, _tasks_col = get_db_collections()
+    if _tasks_col is not None:
+         _tasks_col.insert_one({
+            "task_id": task_id,
+            "status": "RUNNING",
+            "current_stage": "INIT",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
+            "details": {"tender_id": tender_id, "type": "TARGETED_ANALYSIS"}
+        })
+
+    try:
+        # Sales Agent
+        update_task_status(task_id, "SALES_AGENT", "RUNNING")
+        process_tenders_via_sales_agent(tender_id=tender_id)
+        
+        # Technical Agent
+        update_task_status(task_id, "TECHNICAL_AGENT", "RUNNING")
+        process_tenders_via_technical_agent(tender_id=tender_id)
+        
+        # Pricing Agent
+        update_task_status(task_id, "PRICING_AGENT", "RUNNING")
+        process_tenders_via_pricing_agent(tender_id=tender_id)
+        
+        # Master Agent
+        update_task_status(task_id, "MASTER_AGENT", "RUNNING")
+        process_tenders_via_master_agent(tender_id=tender_id)
+        
+        update_task_status(task_id, "COMPLETED", "SUCCESS", {"tender_id": tender_id})
+        logger.info(f"Targeted re-analysis completed for {tender_id}")
+        
+    except Exception as e:
+        logger.error(f"Re-analysis failed: {e}")
+        update_task_status(task_id, "FAILED", "ERROR", {"error": str(e)})

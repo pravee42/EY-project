@@ -172,11 +172,17 @@ def calculate_pricing_for_line_item(rfp_item: dict, sku_item: dict, test_list: L
         "total_cost": total_cost
     }
 
-def process_tenders_via_pricing_agent(limit=20) -> List[str]:
+def process_tenders_via_pricing_agent(limit=20, tender_id: str = None) -> List[str]:
     """
     Main pipeline for Pricing Agent.
     """
-    tenders = find_ready_for_pricing(limit)
+    if tender_id:
+        from bson import ObjectId
+        t = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        tenders = [t] if t else []
+    else:
+        tenders = find_ready_for_pricing(limit)
+        
     if not tenders:
         logger.info("No pending tenders for Pricing Agent.")
         return []

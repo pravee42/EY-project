@@ -6,11 +6,15 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
     CheckCircle, XCircle, AlertCircle, RefreshCw, BarChart, Activity,
     FileText, Search, MessageSquare, Mic, Send, X, Filter, ChevronRight,
-    LayoutDashboard, Settings, List, Trash2
+    LayoutDashboard, Settings, List, Trash2, Calendar
 } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Popover from "@radix-ui/react-popover";
 import ReactMarkdown from 'react-markdown';
+import {
+    AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    PieChart, Pie, Cell, BarChart as RechartsBarChart, Bar, Legend
+} from 'recharts';
 
 
 const API_BASE = "http://127.0.0.1:8000";
@@ -58,7 +62,7 @@ export default function Dashboard() {
     const [tasks, setTasks] = useState<CeleryTask[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshKey, setRefreshKey] = useState(0);
-    const [activeTab, setActiveTab] = useState<"dashboard" | "chat">("dashboard");
+    const [activeTab, setActiveTab] = useState<"dashboard" | "chat" | "analytics" | "calendar">("dashboard");
 
     // Filters
     const [search, setSearch] = useState("");
@@ -166,8 +170,12 @@ export default function Dashboard() {
                             </div>
                         </main>
                     </>
-                ) : (
+                ) : activeTab === "chat" ? (
                     <GlobalChat />
+                ) : activeTab === "analytics" ? (
+                    <AnalyticsDashboard />
+                ) : (
+                    <CalendarView />
                 )}
             </div>
 
@@ -177,7 +185,7 @@ export default function Dashboard() {
 
 // --- Sub Components ---
 
-function Sidebar({ tasks, activeTab, onTabChange }: { tasks: CeleryTask[], activeTab: string, onTabChange: (t: "dashboard" | "chat") => void }) {
+function Sidebar({ tasks, activeTab, onTabChange }: { tasks: CeleryTask[], activeTab: string, onTabChange: (t: "dashboard" | "chat" | "analytics" | "calendar") => void }) {
     return (
         <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-20">
             <div className="p-6 border-b border-gray-100">
@@ -206,6 +214,24 @@ function Sidebar({ tasks, activeTab, onTabChange }: { tasks: CeleryTask[], activ
                     <MessageSquare className="h-4 w-4" />
                     Global Intelligence
                     <span className="ml-auto text-[10px] bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-bold">New</span>
+                </button>
+                <button
+                    onClick={() => onTabChange("analytics")}
+                    className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
+                        activeTab === "analytics" ? "bg-indigo-50 text-indigo-700 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                >
+                    <BarChart className="h-4 w-4" />
+                    RFP Intelligence
+                </button>
+                <button
+                    onClick={() => onTabChange("calendar")}
+                    className={cn("w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all",
+                        activeTab === "calendar" ? "bg-indigo-50 text-indigo-700 shadow-sm" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                >
+                    <Calendar className="h-4 w-4" />
+                    Auto-Bid Calendar
                 </button>
             </div>
 
@@ -732,6 +758,258 @@ function RejectionDialog({ tenderId, onRefresh }: { tenderId?: string, onRefresh
     )
 }
 
+// --- Analytics Dashboard Component ---
+function AnalyticsDashboard() {
+    const [data, setData] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch(`${API_BASE}/api/analytics/dashboard`)
+            .then(res => res.json())
+            .then(d => { setData(d); setLoading(false); })
+            .catch(e => console.error(e));
+    }, []);
+
+    if (loading) return <div className="h-full flex items-center justify-center text-slate-400">Loading Analytics...</div>;
+    if (!data || data.error) return <div className="h-full flex items-center justify-center text-rose-500">Failed to load data.</div>;
+
+    const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+
+    return (
+        <div className="flex-1 h-full overflow-y-auto bg-slate-50 p-8">
+            <div className="max-w-7xl mx-auto space-y-6">
+
+                {/* Header */}
+                <div className="flex justify-between items-end mb-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">RFP Intelligence</h1>
+                        <p className="text-sm text-slate-500">Real-time insights on volume, win-rates, and efficiency.</p>
+                    </div>
+                    <div className="flex gap-4">
+                        <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center w-32">
+                            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Total RFPs</span>
+                            <span className="text-2xl font-bold text-slate-800">{data.total_tenders}</span>
+                        </div>
+                        <div className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col items-center w-32">
+                            <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Avg Response</span>
+                            <span className="text-2xl font-bold text-indigo-600">{data.avg_response_time}h</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Top Row Charts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Volume Trends */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2">
+                            <BarChart className="h-4 w-4 text-indigo-500" /> RFP Volume Trends (Daily)
+                        </h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={data.volume_trends}>
+                                    <defs>
+                                        <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1} />
+                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Area type="monotone" dataKey="count" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Win Likelihood */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-700 mb-6 flex items-center gap-2">
+                            <Activity className="h-4 w-4 text-emerald-500" /> Win Likelihood Distribution
+                        </h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <RechartsBarChart data={data.win_likelihood}>
+                                    <XAxis dataKey="range" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                                    <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                                    <Tooltip cursor={{ fill: '#f8fafc' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Bar dataKey="count" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                                </RechartsBarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom Row Charts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Category Dist */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-700 mb-4">Category Breakdown</h3>
+                        <div className="h-64 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={data.category_distribution}
+                                        cx="50%" cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {data.category_distribution.map((entry: any, index: number) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                                    <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+
+                    {/* Status Dist */}
+                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
+                        <h3 className="text-sm font-bold text-slate-700 mb-4">Pipeline Status</h3>
+                        <div className="h-64 w-full flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={data.status_distribution}
+                                        cx="50%" cy="50%"
+                                        outerRadius={80}
+                                        fill="#8884d8"
+                                        dataKey="value"
+                                        label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
+                                    >
+                                        {data.status_distribution.map((entry: any, index: number) => (
+                                            <Cell key={`cell-${index}`} fill={
+                                                entry.name === 'Approved' ? '#10b981' :
+                                                    entry.name === 'Rejected' ? '#ef4444' : '#f59e0b'
+                                            } />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+}
+
+// --- Auto-Bid Calendar Component ---
+function CalendarView() {
+    const [events, setEvents] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch(`${API_BASE}/api/calendar/events`)
+            .then(res => res.json())
+            .then(data => {
+                // Sort by date
+                const sorted = data.sort((a: any, b: any) => new Date(a.start).getTime() - new Date(b.start).getTime());
+                setEvents(sorted);
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error(err);
+                setLoading(false);
+            });
+    }, []);
+
+    if (loading) return <div className="h-full flex items-center justify-center text-slate-400">Loading Calendar...</div>;
+
+    const getIcon = (type: string) => {
+        if (type === 'submission') return <AlertCircle className="h-5 w-5 text-rose-500" />;
+        if (type === 'technical') return <Settings className="h-5 w-5 text-indigo-500" />;
+        return <CheckCircle className="h-5 w-5 text-emerald-500" />;
+    };
+
+    const getTypeLabel = (type: string) => {
+        if (type === 'submission') return "Submission Deadline";
+        if (type === 'technical') return "Technical Review";
+        return "Pricing Approval";
+    };
+
+    return (
+        <div className="flex-1 h-full overflow-y-auto bg-slate-50 p-8">
+            <div className="max-w-4xl mx-auto space-y-8">
+
+                <div className="flex justify-between items-end">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-900">Auto-Bid Calendar</h1>
+                        <p className="text-sm text-slate-500">Upcoming deadlines and automated milestones.</p>
+                    </div>
+                    <a
+                        href="https://calendar.google.com"
+                        target="_blank"
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1"
+                    >
+                        Open Google Calendar <ChevronRight className="h-3 w-3" />
+                    </a>
+                </div>
+
+                <div className="space-y-4">
+                    {events.length === 0 && (
+                        <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-300 text-gray-400">
+                            No upcoming deadlines found.
+                        </div>
+                    )}
+
+                    {events.map((event) => (
+                        <div key={event.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex items-center gap-4 hover:shadow-md transition-all group">
+
+                            {/* Date Box */}
+                            <div className="flex-shrink-0 w-16 h-16 bg-slate-50 rounded-lg flex flex-col items-center justify-center border border-slate-100">
+                                <span className="text-xs font-bold text-slate-500 uppercase">
+                                    {new Date(event.start).toLocaleString('default', { month: 'short' })}
+                                </span>
+                                <span className="text-xl font-bold text-slate-900">
+                                    {new Date(event.start).getDate()}
+                                </span>
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                    {getIcon(event.type)}
+                                    <span className={cn(
+                                        "text-[10px] font-bold uppercase tracking-wider",
+                                        event.type === 'submission' ? "text-rose-600" :
+                                            event.type === 'technical' ? "text-indigo-600" : "text-emerald-600"
+                                    )}>
+                                        {getTypeLabel(event.type)}
+                                    </span>
+                                </div>
+                                <h3 className="text-sm font-bold text-slate-900 truncate" title={event.title}>
+                                    {event.title.replace(/🗓 |🔧 |💰 /, "")}
+                                </h3>
+                                <p className="text-xs text-slate-500">
+                                    {new Date(event.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Automated via RFP Yukti
+                                </p>
+                            </div>
+
+                            {/* Action */}
+                            <a
+                                href={event.google_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="opacity-0 group-hover:opacity-100 transition-opacity bg-indigo-50 hover:bg-indigo-100 text-indigo-600 p-2 rounded-lg"
+                                title="Add to Google Calendar"
+                            >
+                                <Calendar className="h-5 w-5" />
+                            </a>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // --- Global Chat Component (Themed Multi-Session) ---
 function GlobalChat() {
     const [sessions, setSessions] = useState<{ _id: string, title: string }[]>([]);
@@ -962,8 +1240,44 @@ function GlobalChat() {
                                         {m.content}
                                     </ReactMarkdown>
 
-                                    {/* Structured Data Display */}
-                                    {m.data && (
+                                    {/* Action Feedback Card */}
+                                    {m.data?.action && (
+                                        <div className={cn(
+                                            "mt-3 border rounded-xl overflow-hidden not-prose transition-all",
+                                            m.data.action === 'approve' ? "bg-emerald-50 border-emerald-100" :
+                                                m.data.action === 'reject' ? "bg-rose-50 border-rose-100" :
+                                                    "bg-blue-50 border-blue-100"
+                                        )}>
+                                            <div className="px-4 py-3 flex items-center gap-3">
+                                                {m.data.action === 'approve' ? <CheckCircle className="h-5 w-5 text-emerald-600" /> :
+                                                    m.data.action === 'reject' ? <XCircle className="h-5 w-5 text-rose-600" /> :
+                                                        <RefreshCw className="h-5 w-5 text-blue-600 animate-spin" />}
+
+                                                <div>
+                                                    <div className={cn("text-[10px] font-bold uppercase tracking-wider opacity-70",
+                                                        m.data.action === 'approve' ? "text-emerald-800" :
+                                                            m.data.action === 'reject' ? "text-rose-800" : "text-blue-800"
+                                                    )}>
+                                                        {m.data.action === 'approve' ? 'System Update' :
+                                                            m.data.action === 'reject' ? 'System Update' : 'Background Task'}
+                                                    </div>
+                                                    <div className="text-sm font-bold text-slate-800">
+                                                        {m.data.action === 'approve' ? 'Tender Approved' :
+                                                            m.data.action === 'reject' ? 'Tender Rejected' :
+                                                                'Competitor Analysis Started'}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {m.data.tender && (
+                                                <div className="px-4 py-2 bg-white/50 border-t border-black/5 text-xs text-slate-600">
+                                                    Target: <span className="font-semibold">{m.data.tender}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Generic Structured Data Display */}
+                                    {m.data && !m.data.action && (
                                         <div className="mt-3 bg-slate-50 border border-slate-100 rounded-xl overflow-hidden not-prose">
                                             <div className="px-3 py-2 bg-slate-100 border-b border-slate-200 flex items-center gap-2">
                                                 <CheckCircle className="h-3 w-3 text-emerald-500" />

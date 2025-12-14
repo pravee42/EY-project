@@ -174,11 +174,17 @@ def build_comparison_table(rfp_item: dict, top_3_skus: List[dict]) -> Dict[str, 
         
     return table
 
-def process_tenders_via_technical_agent(limit=20) -> List[str]:
+def process_tenders_via_technical_agent(limit=20, tender_id: str = None) -> List[str]:
     """
     Main pipeline for Technical Agent.
     """
-    tenders = find_sales_processed_tenders(limit)
+    if tender_id:
+        from bson import ObjectId
+        t = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        tenders = [t] if t else []
+    else:
+        tenders = find_sales_processed_tenders(limit)
+        
     if not tenders:
         logger.info("No pending tenders for Technical Agent.")
         return []

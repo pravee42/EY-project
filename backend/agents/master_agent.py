@@ -118,11 +118,17 @@ def render_pdf_from_template(final_json: dict, output_filename: str) -> str:
         logger.error(f"Failed to render PDF: {e}")
         return ""
 
-def process_tenders_via_master_agent(limit=20) -> List[str]:
+def process_tenders_via_master_agent(limit=20, tender_id: str = None) -> List[str]:
     """
     Main pipeline for Master Agent.
     """
-    tenders = find_ready_for_master(limit)
+    if tender_id:
+        from bson import ObjectId
+        t = tenders_collection.find_one({"_id": ObjectId(tender_id)})
+        tenders = [t] if t else []
+    else:
+        tenders = find_ready_for_master(limit)
+        
     if not tenders:
         logger.info("No pending tenders for Master Agent.")
         return []
