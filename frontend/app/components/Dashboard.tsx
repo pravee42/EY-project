@@ -1017,6 +1017,9 @@ function GlobalChat() {
     const [messages, setMessages] = useState<{ role: 'user' | 'ai' | 'system', content: string, data?: any }[]>([]);
     const [input, setInput] = useState("");
     const [loading, setLoading] = useState(false);
+    const [listening, setListening] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<BlobPart[]>([]);
     const bottomRef = useRef<HTMLDivElement>(null);
 
     // Tender Context Selector
@@ -1123,6 +1126,90 @@ function GlobalChat() {
             setMessages(prev => [...prev, { role: 'system', content: "Connection Error: Backend unreachable." }]);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const toggleListening = async () => {
+        if (listening) {
+            // Stop recording
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                mediaRecorderRef.current.stop();
+            }
+            setListening(false);
+        } else {
+            // Start recording
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Use a common codec that Sarvam STT can handle
+                const options = { mimeType: 'audio/webm' };
+                const mediaRecorder = new MediaRecorder(stream, options);
+                mediaRecorderRef.current = mediaRecorder;
+                audioChunksRef.current = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunksRef.current.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = async () => {
+                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    // Send to backend
+                    setLoading(true);
+                    try {
+                        const formData = new FormData();
+                        formData.append('file', audioBlob, 'recording.webm');
+                        
+                        const res = await fetch(`${API_BASE}/api/voice/stt`, {
+                            method: "POST",
+                            body: formData
+                        });
+                        
+                        const data = await res.json();
+                        if (data.transcript) {
+                            // Auto-send the transcribed text
+                            setInput(""); // Clear input
+                            
+                            // Optimistic Update
+                            setMessages(prev => [...prev, { role: 'user', content: data.transcript }]);
+                            
+                            // Send to chat API
+                            const chatRes = await fetch(`${API_BASE}/api/chat/sessions/${currentSessionId}/message`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ query: data.transcript, tender_id: selectedTender })
+                            });
+                            
+                            const chatData = await chatRes.json();
+                            setMessages(prev => [...prev, {
+                                role: 'ai',
+                                content: chatData.answer,
+                                data: chatData.data
+                            }]);
+                            
+                            if (chatData.new_title) {
+                                setSessions(prev => prev.map(s => s._id === currentSessionId ? { ...s, title: chatData.new_title } : s));
+                            }
+                        } else if (data.error) {
+                            console.error("STT Error:", data.error);
+                            setMessages(prev => [...prev, { role: 'system', content: `Voice error: ${data.error}` }]);
+                        }
+                    } catch (e) {
+                        console.error("Failed to transcribe audio", e);
+                        setMessages(prev => [...prev, { role: 'system', content: "Voice connection error." }]);
+                    } finally {
+                        setLoading(false);
+                        // Stop all tracks to release mic
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                };
+
+                mediaRecorder.start();
+                setListening(true);
+            } catch (err) {
+                console.error("Error accessing microphone:", err);
+                alert("Could not access microphone.");
+            }
         }
     };
 
@@ -1324,6 +1411,18 @@ function GlobalChat() {
                                 autoFocus
                             />
                         </div>
+                        <button
+                            onClick={toggleListening}
+                            className={cn(
+                                "p-3 rounded-xl transition-all shadow-sm flex items-center justify-center min-w-[3rem]",
+                                listening 
+                                    ? "bg-rose-100 text-rose-600 hover:bg-rose-200 animate-pulse border border-rose-200" 
+                                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-transparent"
+                            )}
+                            title={listening ? "Stop Recording" : "Use Voice (Sarvam AI)"}
+                        >
+                            <Mic className="h-5 w-5" />
+                        </button>
                         <button
                             onClick={handleSend}
                             disabled={!input.trim() || loading || !currentSessionId}

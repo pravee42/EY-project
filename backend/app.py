@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
+import httpx
 from bson import ObjectId
 from apscheduler.schedulers.background import BackgroundScheduler
 from contextlib import asynccontextmanager
@@ -597,6 +598,51 @@ def draft_proposal(tender_id: str):
         logger.error(f"Error in proposal drafting: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.post("/api/voice/stt")
+async def speech_to_text(file: UploadFile = File(...)):
+    """
+    Receives an audio file from the frontend, sends it to Sarvam STT API, 
+    and returns the transcribed text.
+    """
+    sarvam_key = os.environ.get("SARVAM_API")
+    if not sarvam_key:
+        return {"error": "SARVAM_API key not configured."}
+    
+    # Ensure mime type is allowed by Sarvam
+    # Common frontend audio mime types: audio/webm, audio/wav, audio/ogg
+    # We'll forward whatever the frontend sends, but Sarvam requires a specific set.
+    
+    url = "https://api.sarvam.ai/speech-to-text-translate"
+    # Or "https://api.sarvam.ai/speech-to-text" if no translation needed, both use saaras:v3
+    
+    headers = {
+        "api-subscription-key": sarvam_key
+    }
+    
+    try:
+        audio_content = await file.read()
+        files = {
+            'file': (file.filename, audio_content, file.content_type)
+        }
+        data = {
+            'model': 'saaras:v3'
+        }
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers, files=files, data=data)
+            
+            if response.status_code == 200:
+                res_data = response.json()
+                # Returns something like {"transcript": "text"}
+                return {"transcript": res_data.get("transcript", "")}
+            else:
+                logger.error(f"Sarvam STT Failed: {response.text}")
+                return {"error": f"Failed to transcribe audio. Status: {response.status_code}", "details": response.text}
+                
+    except Exception as e:
+        logger.error(f"Error calling Sarvam STT: {e}")
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
@@ -1063,6 +1109,8 @@ def get_analytics_dashboard():
             prob = 0
             if t.get("competitor_analysis"):
                 prob = t["competitor_analysis"].get("win_probability", 0)
+                if prob is None:
+                    prob = 0
             
             if prob <= 20: win_dist["0-20%"] += 1
             elif prob <= 40: win_dist["20-40%"] += 1
